@@ -6,7 +6,7 @@ use App\Models\MateriaGrupal;
 use App\Models\CicloLectivo;
 use App\Models\NivelParametro;
 use App\Models\PlanEstudioCorrelativa;
-use Illuminate\Support\Facades\DB; // <-- ACÁ ESTÁ EL FIX DEL ERROR
+use Illuminate\Support\Facades\DB;
 use Exception;
 
 class InscripcionRepository
@@ -27,14 +27,11 @@ class InscripcionRepository
         $alumnoNoRegular = ($alumno->ID_Situacion != 2);
         $periodoCerrado = (!$parametros || $parametros->HabAI != 1);
 
-        // Materias que el alumno ya aprobó (Final o Cursada)
         $materiasAprobadasIds = $alumno->notasCursada->where('Final', 'SI')->pluck('ID_Materia')->toArray();
         $materiasCursadasIds = $alumno->notasCursada->where('Cursada', 1)->pluck('ID_Materia')->toArray();
 
-        // Unimos ambas para ocultarlas del listado (Como hacía el legacy)
         $materiasOcultasIds = array_unique(array_merge($materiasAprobadasIds, $materiasCursadasIds));
 
-        // Mapeo para el chequeo de correlativas
         $materiasPlanAprobadasFinal = DB::table('materias')
             ->whereIn('ID', $materiasAprobadasIds)
             ->pluck('ID_Materia_Plan')->toArray();
@@ -43,7 +40,6 @@ class InscripcionRepository
             ->whereIn('ID', $materiasCursadasIds)
             ->pluck('ID_Materia_Plan')->toArray();
 
-        // Traemos la oferta de materias, OCULTANDO las que ya aprobó
         $gruposDisponibles = MateriaGrupal::withCount('inscripciones')
             ->join('materias', 'materias.ID', '=', 'materias_grupales.ID_Materia')
             ->join('materias_planes', 'materias_planes.ID', '=', 'materias.ID_Materia_Plan')
@@ -51,7 +47,7 @@ class InscripcionRepository
             ->where('materias_grupales.ID_Ciclo_Lectivo', optional($cicloLectivo)->ID)
             ->where('materias_grupales.AI', 'SI')
             ->where('materias.Turno', optional($alumno->curso)->Turno)
-            ->whereNotIn('materias_grupales.ID_Materia', $materiasOcultasIds) // <-- ESTO LAS OCULTA
+            ->whereNotIn('materias_grupales.ID_Materia', $materiasOcultasIds)
             ->select(
                 'materias_grupales.*', 
                 'materias.Materia as Nombre_Materia',
@@ -82,7 +78,6 @@ class InscripcionRepository
                 $puedeInscribirse = false;
             }
 
-            // Chequeo estricto de Correlativas
             $evaluacionCorrelativas = $this->checkCorrelativas(
                 $grupo->ID_Materia_Plan, 
                 $materiasPlanAprobadasFinal, 
@@ -94,7 +89,6 @@ class InscripcionRepository
                 $puedeInscribirse = false;
             }
 
-            // Solicitud de Excepción (Salvoconducto)
             $solicitudPendiente = DB::table('solicitudes_excepcion_cursada')
                 ->where('ID_Materia', $grupo->Materia_Instancia_ID)
                 ->where('ID_Alumno', $alumno->ID)
@@ -102,7 +96,6 @@ class InscripcionRepository
                 ->where('B', 0)
                 ->exists();
 
-            // Solo permite excepción si está bloqueada POR CORRELATIVAS
             $bloqueoPorCorrelativa = in_array($evaluacionCorrelativas['causal'], $causales);
             $permiteExcepcion = (!$puedeInscribirse && optional($parametros)->HabSE == 1 && !$solicitudPendiente && $bloqueoPorCorrelativa);
 
@@ -127,9 +120,6 @@ class InscripcionRepository
         ];
     }
 
-    /**
-     * Función Privada para el Semáforo de Correlativas (Con textos exactos al legacy)
-     */
     private function checkCorrelativas(int $idMateriaPlan, array $materiasPlanFinalAprobadas, array $materiasPlanCursadaAprobadas)
     {
         $correlativas = PlanEstudioCorrelativa::with('materiaCorrelativa')
@@ -146,25 +136,21 @@ class InscripcionRepository
 
         foreach ($correlativas as $correlativa) {
             $idRequerido = $correlativa->ID_Materia_C;
-            $tipo = $correlativa->Tipo; // 1 = Cursada, otro = Final
+            $tipo = $correlativa->Tipo;
             $nombreCorrelativa = $correlativa->materiaCorrelativa->Materia ?? 'Materia Desconocida';
             
             $aprobada = false;
 
             if ($tipo == 1) {
-                // Requiere CURSADA (o Final, si tiene final obvio tiene cursada)
                 if (in_array($idRequerido, $materiasPlanCursadaAprobadas) || in_array($idRequerido, $materiasPlanFinalAprobadas)) {
                     $aprobada = true;
                 } else {
-                    // Texto idéntico a la imagen e8cfb1.jpg
                     $causales[] = "Cursada bloqueada por ausencia de Cursada de " . $nombreCorrelativa;
                 }
             } else {
-                // Requiere FINAL SI O SI
                 if (in_array($idRequerido, $materiasPlanFinalAprobadas)) {
                     $aprobada = true;
                 } else {
-                    // Texto idéntico a la imagen e8cfb1.jpg
                     $causales[] = "Cursada bloqueada por ausencia de Final de " . $nombreCorrelativa;
                 }
             }
@@ -182,5 +168,78 @@ class InscripcionRepository
                 'causal' => implode(' | ', $causales)
             ];
         }
+    }
+
+    // <-- FIX: Se reincorporaron los métodos de gestionar la inscripción
+    public function inscribir(int $alumnoId, int $idMateriaGrupal)
+    {
+        return DB::transaction(function () use ($alumnoId, $idMateriaGrupal) {
+            $alumno = DB::table('alumnos')->where('ID', $alumnoId)->first();
+            if (!$alumno) throw new \Exception('Alumno no encontrado.');
+
+            $parametros = DB::table('nivel_parametros')->where('ID_Nivel', $alumno->ID_Nivel)->first();
+            if (!$parametros || $parametros->HabAI != 1) {
+                throw new \Exception('El período de inscripciones no se encuentra abierto.');
+            }
+
+            $ciclo = DB::table('ciclo_lectivo')
+                ->where('ID_Nivel', $alumno->ID_Nivel)
+                ->where('Vigente', 'SI')->first();
+
+            $yaInscripto = DB::table('grupos')
+                ->where('ID_Alumno', $alumnoId)
+                ->where('ID_Materia_Grupal', $idMateriaGrupal)
+                ->exists();
+
+            if ($yaInscripto) {
+                throw new \Exception('Ya te encuentras inscripto en este grupo.');
+            }
+
+            $grupo = DB::table('materias_grupales')
+                ->where('ID', $idMateriaGrupal)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$grupo) throw new \Exception('El grupo no existe.');
+
+            if ($grupo->Cupo > 0) {
+                $inscriptos = DB::table('grupos')->where('ID_Materia_Grupal', $idMateriaGrupal)->count();
+                if ($inscriptos >= $grupo->Cupo) {
+                    throw new \Exception('El grupo se encuentra completo. No hay cupos disponibles.');
+                }
+            }
+
+            DB::table('grupos')->insert([
+                'ID_Alumno' => $alumnoId,
+                'ID_Materia_Grupal' => $idMateriaGrupal,
+                'ID_Ciclo_Lectivo' => $ciclo->ID,
+                'Fecha_Inscripcion' => date('Y-m-d H:i:s')
+            ]);
+
+            return true;
+        });
+    }
+
+    public function darDeBaja(int $alumnoId, int $idMateriaGrupal)
+    {
+        return DB::transaction(function () use ($alumnoId, $idMateriaGrupal) {
+            $alumno = DB::table('alumnos')->where('ID', $alumnoId)->first();
+            $parametros = DB::table('nivel_parametros')->where('ID_Nivel', $alumno->ID_Nivel)->first();
+            
+            if (!$parametros || $parametros->HabAI != 1) {
+                throw new \Exception('El período de inscripciones se encuentra cerrado. No puedes cancelar la reserva.');
+            }
+
+            $eliminado = DB::table('grupos')
+                ->where('ID_Alumno', $alumnoId)
+                ->where('ID_Materia_Grupal', $idMateriaGrupal)
+                ->delete();
+
+            if (!$eliminado) {
+                throw new \Exception('No se encontró una inscripción vigente para cancelar.');
+            }
+
+            return true;
+        });
     }
 }

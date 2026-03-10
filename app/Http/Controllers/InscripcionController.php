@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\InscribirMateriaRequest;
+use App\Http\Requests\GestionarInscripcionRequest; // <-- FIX del nombre del Request
 use App\Repositories\InscripcionRepository;
 use Illuminate\Http\Request;
 use Exception;
@@ -10,7 +10,6 @@ use Illuminate\Support\Facades\Log;
 
 class InscripcionController extends Controller
 {
-    // Usamos el nombre original que tenías
     protected $inscripcionRepo;
 
     public function __construct(InscripcionRepository $inscripcionRepo)
@@ -27,7 +26,6 @@ class InscripcionController extends Controller
                 return response()->json(['success' => false, 'message' => 'Sesión de alumno no válida'], 401);
             }
 
-            // Llamada correcta a la propiedad y al método
             $resultado = $this->inscripcionRepo->getMateriasDisponibles((int) $alumnoId);
 
             if (isset($resultado['status']) && $resultado['status'] === 'error') {
@@ -43,7 +41,6 @@ class InscripcionController extends Controller
         } catch (Exception $e) {
             Log::error('Error al obtener cursos disponibles: ' . $e->getMessage());
             
-            // Modo Debug encendido para cazar cualquier otro error SQL
             return response()->json([
                 'success' => false, 
                 'message' => 'Error de código o SQL',
@@ -54,22 +51,57 @@ class InscripcionController extends Controller
         }
     }
 
-    public function inscribir(InscribirMateriaRequest $request)
+   public function inscribir(GestionarInscripcionRequest $request)
     {
-        try {
-            $alumnoId = session('idal', $request->header('X-Alumno-ID'));
+        $alumnoId = session('idal', $request->header('X-Alumno-ID'));
 
-            $this->inscripcionRepo->inscribirAlumno((int) $alumnoId, $request->id_materia_grupal);
+        try {
+            if (!$alumnoId) {
+                return response()->json(['success' => false, 'message' => 'Sesión no válida'], 401);
+            }
+
+            // <-- FIX: Usamos inscripcionRepo como en el constructor
+            $this->inscripcionRepo->inscribir((int) $alumnoId, $request->id_materia_grupal);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Inscripción realizada con éxito.'
+                'message' => 'Inscripción confirmada con éxito.'
             ], 201);
 
-        } catch (Exception $e) {
-            Log::warning("Fallo al inscribir alumno {$alumnoId}: " . $e->getMessage());
+        } catch (\Exception $e) {
+            $idLog = $alumnoId ?? 'Desconocido';
+            Log::warning("Fallo al inscribir alumno {$idLog}: " . $e->getMessage());
+            
             return response()->json([
-                'success' => false,
+                'success' => false, 
+                'message' => $e->getMessage()
+            ], 422);
+        }
+    }
+
+    public function darDeBaja(GestionarInscripcionRequest $request)
+    {
+        $alumnoId = session('idal', $request->header('X-Alumno-ID'));
+
+        try {
+            if (!$alumnoId) {
+                return response()->json(['success' => false, 'message' => 'Sesión no válida'], 401);
+            }
+
+            // <-- FIX: Usamos inscripcionRepo como en el constructor
+            $this->inscripcionRepo->darDeBaja((int) $alumnoId, $request->id_materia_grupal);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'La inscripción ha sido cancelada correctamente.'
+            ], 200);
+
+        } catch (\Exception $e) {
+            $idLog = $alumnoId ?? 'Desconocido';
+            Log::warning("Fallo al cancelar inscripción del alumno {$idLog}: " . $e->getMessage());
+            
+            return response()->json([
+                'success' => false, 
                 'message' => $e->getMessage()
             ], 422);
         }
