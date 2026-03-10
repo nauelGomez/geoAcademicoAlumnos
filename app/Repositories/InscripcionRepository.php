@@ -141,4 +141,88 @@ class InscripcionRepository
 
     return collect();
 }
+/**
+     * Inscribe a un alumno verificando cupos con bloqueo pesimista
+     */
+    public function inscribir(int $alumnoId, int $idMateriaGrupal)
+    {
+        return DB::transaction(function () use ($alumnoId, $idMateriaGrupal) {
+            // 1. Validar el estado del alumno y período
+            $alumno = DB::table('alumnos')->where('ID', $alumnoId)->first();
+            if (!$alumno) throw new \Exception('Alumno no encontrado.');
+
+            $parametros = DB::table('nivel_parametros')->where('ID_Nivel', $alumno->ID_Nivel)->first();
+            if (!$parametros || $parametros->HabAI != 1) {
+                throw new \Exception('El período de inscripciones no se encuentra abierto.');
+            }
+
+            $ciclo = DB::table('ciclo_lectivo')
+                ->where('ID_Nivel', $alumno->ID_Nivel)
+                ->where('Vigente', 'SI')->first();
+
+            // 2. Controlar si ya está inscripto
+            $yaInscripto = DB::table('grupos')
+                ->where('ID_Alumno', $alumnoId)
+                ->where('ID_Materia_Grupal', $idMateriaGrupal)
+                ->exists();
+
+            if ($yaInscripto) {
+                throw new \Exception('Ya te encuentras inscripto en este grupo.');
+            }
+
+            // 3. Bloqueo Pesimista de BD (Nadie más puede leer/escribir esta fila hasta que terminemos)
+            $grupo = DB::table('materias_grupales')
+                ->where('ID', $idMateriaGrupal)
+                ->lockForUpdate()
+                ->first();
+
+            if (!$grupo) throw new \Exception('El grupo no existe.');
+
+            // 4. Calcular cupos en tiempo real
+            if ($grupo->Cupo > 0) {
+                $inscriptos = DB::table('grupos')->where('ID_Materia_Grupal', $idMateriaGrupal)->count();
+                if ($inscriptos >= $grupo->Cupo) {
+                    throw new \Exception('El grupo se encuentra completo. No hay cupos disponibles.');
+                }
+            }
+
+            // 5. Proceder con la inscripción
+            DB::table('grupos')->insert([
+                'ID_Alumno' => $alumnoId,
+                'ID_Materia_Grupal' => $idMateriaGrupal,
+                'ID_Ciclo_Lectivo' => $ciclo->ID,
+                'Fecha_Inscripcion' => date('Y-m-d H:i:s')
+            ]);
+
+            return true;
+        });
+    }
+
+    /**
+     * Da de baja una inscripción si el período lo permite
+     */
+    public function darDeBaja(int $alumnoId, int $idMateriaGrupal)
+    {
+        return DB::transaction(function () use ($alumnoId, $idMateriaGrupal) {
+            // 1. Validar si el periodo permite bajas
+            $alumno = DB::table('alumnos')->where('ID', $alumnoId)->first();
+            $parametros = DB::table('nivel_parametros')->where('ID_Nivel', $alumno->ID_Nivel)->first();
+            
+            if (!$parametros || $parametros->HabAI != 1) {
+                throw new \Exception('El período de inscripciones se encuentra cerrado. No puedes cancelar la reserva.');
+            }
+
+            // 2. Eliminar inscripción
+            $eliminado = DB::table('grupos')
+                ->where('ID_Alumno', $alumnoId)
+                ->where('ID_Materia_Grupal', $idMateriaGrupal)
+                ->delete();
+
+            if (!$eliminado) {
+                throw new \Exception('No se encontró una inscripción vigente para cancelar.');
+            }
+
+            return true;
+        });
+    }
 }
