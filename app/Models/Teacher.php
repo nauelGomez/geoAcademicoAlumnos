@@ -1,0 +1,62 @@
+<?php
+
+namespace App\Models;
+
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class Teacher extends Model
+{
+    use HasFactory;
+
+    protected $connection = 'tenant';
+
+    protected $table = 'personal';
+    protected $primaryKey = 'ID';
+    public $timestamps = false;
+
+    protected $fillable = [
+        'Nombre',
+        'Apellido',
+        'DNI',
+        'Mail',
+        'Telefono',
+        'Cargo',
+        'Estado'
+    ];
+
+    protected $casts = [
+        'Estado' => 'boolean'
+    ];
+
+    public function tasks(): HasMany
+    {
+        return $this->hasMany(Task::class, 'ID_Usuario', 'ID');
+    }
+
+    public function virtualClasses(): HasMany
+    {
+        return $this->hasMany(VirtualClass::class, 'ID_Usuario', 'ID');
+    }
+
+    public function taskQueries(): HasMany
+    {
+        return $this->hasMany(TaskQuery::class, 'ID_Docente', 'ID');
+    }
+
+    public function newsWalls(): HasMany
+    {
+        return $this->hasMany(NewsWall::class, 'ID_Usuario', 'ID');
+    }
+
+    public function getFullNameAttribute(): string
+    {
+        return trim($this->Apellido . ' - ' . $this->Nombre);
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->where('Estado', 1);
+    }
+}
