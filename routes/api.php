@@ -17,7 +17,6 @@ use App\Http\Controllers\InscripcionController;
 Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
     return $request->user();
 });
-Route::get('/inscripciones/disponibles', [InscripcionController::class, 'getDisponibles']);
 Route::get('/hello', function () {
     return response()->json([
         'message' => 'Hello World',
@@ -25,3 +24,11 @@ Route::get('/hello', function () {
         'project' => 'geoAcademicoAlumnos'
     ]);
 });
+Route::prefix('inscripciones')->group(function () {
+        // El GET que ya tenías funcionando (ojo que en tu último código le pusiste getDisponibles)
+        Route::get('/disponibles', [InscripcionController::class, 'getDisponibles']);
+        
+        // Los dos POST nuevos para gestionar los cupos
+        Route::post('/inscribir', [InscripcionController::class, 'inscribir']);
+        Route::post('/dar-de-baja', [InscripcionController::class, 'darDeBaja']);
+    });
