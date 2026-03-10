@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Models\Subject;
 
 class Level extends Model
 {
@@ -13,7 +14,7 @@ class Level extends Model
     protected $connection = 'tenant';
 
     protected $table = 'nivel';
-    protected $primaryKey = 'IDPrimary';
+    protected $primaryKey = 'ID';
     public $timestamps = false;
 
     protected $fillable = [
@@ -47,6 +48,6 @@ class Level extends Model
 
     public function multipleLevels(): HasMany
     {
-        return $this->hasMany(NivelMultiple::class, 'ID_Nivel', 'IDPrimary');
+        return $this->hasMany(NivelMultiple::class, 'ID_Nivel', 'ID');
     }
 }

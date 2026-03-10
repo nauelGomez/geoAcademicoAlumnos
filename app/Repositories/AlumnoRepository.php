@@ -1,31 +1,31 @@
 <?php
-namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
+namespace App\Repositories;
 
-class Student extends Model
+use App\Models\Student;
+
+class AlumnoRepository
 {
-    // Nombre de la tabla según tu DB local
-    protected $table = 'alumnos'; 
+    protected $model;
 
-    // En tu imagen, ID está en mayúsculas [cite: 11]
-    protected $primaryKey = 'ID'; 
+    public function __construct(Student $student)
+    {
+        $this->model = $student;
+    }
 
-    // IMPORTANTE: Tu tabla no tiene created_at/updated_at [cite: 12]
-    public $timestamps = false; 
-
-    // Campos fillable con los nombres exactos de tu imagen
-    protected $fillable = [
-        'Nombre', 'Apellido', 'DNI', 'Mail_Reponsable', // Confirmado el typo 'Reponsable'
-        'ID_Curso', 'ID_Nivel'
-    ];
     public function getAlumnoConMaterias($studentId)
     {
-        return Student::on('tenant') // Conexión local de la institución
-            ->select('ID', 'Nombre', 'Apellido', 'ID_Curso') // Tabla Alumnos
+        // La lógica de negocio y queries vive aquí, no en el modelo
+        return $this->model->newQuery()
+            ->select('ID', 'Nombre', 'Apellido', 'ID_Curso')
             ->with(['materias' => function($query) {
-                $query->select('ID', 'Materia', 'Curso', 'ID_Plan'); // Tabla materias_planes
+                $query->select('ID', 'Materia', 'Curso', 'ID_Plan');
             }])
             ->find($studentId);
+    }
+
+    public function getAlumnosPaginados($perPage = 50)
+    {
+        return $this->model->paginate($perPage);
     }
 }

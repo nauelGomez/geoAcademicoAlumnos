@@ -13,7 +13,7 @@ class NivelMultiple extends Model
     protected $connection = 'tenant';
 
     protected $table = 'niveles_multiples';
-    protected $primaryKey = 'IDPrimary';
+    protected $primaryKey = 'ID';
     public $timestamps = false;
 
     protected $fillable = [
@@ -34,7 +34,7 @@ class NivelMultiple extends Model
 
     public function level(): BelongsTo
     {
-        return $this->belongsTo(Level::class, 'ID_Nivel', 'IDPrimary');
+        return $this->belongsTo(Level::class, 'ID_Nivel', 'ID');
     }
 
     public function scopeByUser($query, $userId)

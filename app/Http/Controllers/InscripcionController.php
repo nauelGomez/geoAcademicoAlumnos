@@ -16,16 +16,24 @@ class InscripcionController extends Controller
         $this->inscripcionRepo = $inscripcionRepo;
     }
 
-    public function disponibles(Request $request)
+public function disponibles(Request $request)
     {
         try {
             $alumnoId = session('idal', $request->header('X-Alumno-ID')); 
+            // Obtenemos la institución desde el header para decidir el repo
+            $instId = $request->header('X-Institution-ID');
 
             if (!$alumnoId) {
                 return response()->json(['success' => false, 'message' => 'Sesión de alumno no válida'], 401);
             }
 
-            $resultado = $this->inscripcionRepo->getMateriasDisponibles((int) $alumnoId);
+            // ELEGIR REPOSITORY: 
+            // Si es la 21, instanciamos el especial. Si no, usamos el que ya tiene el controller ($this->inscripcionRepo)
+            $repo = ($instId == 21) 
+                ? new \App\Repositories\InscripcionEutRepository() 
+                : $this->inscripcionRepo;
+
+            $resultado = $repo->getMateriasDisponibles((int) $alumnoId);
 
             if (isset($resultado['status']) && $resultado['status'] === 'error') {
                 return response()->json(['success' => false, 'message' => $resultado['message']], 400);

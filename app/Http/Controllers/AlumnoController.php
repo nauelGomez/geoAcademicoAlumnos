@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Repositories\AlumnoRepository;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Exception;
 
 class AlumnoController extends Controller
@@ -34,7 +35,7 @@ class AlumnoController extends Controller
             ], 200);
             
         } catch (Exception $e) {
-            \Log::error('Error fetching students: ' . $e->getMessage());
+            Log::error('Error fetching students: ' . $e->getMessage());
 
             return response()->json([
                 'status'  => 'error',
@@ -46,31 +47,28 @@ class AlumnoController extends Controller
     /**
      * Muestra un alumno en específico.
      */
-    public function show(Request $request, $studentId): JsonResponse
-    {
-        try {
-            $student = $this->alumnoRepository->getAlumnoPorId($studentId);
-            
-            if (!$student) {
-                return response()->json([
-                    'status'  => 'error',
-                    'message' => 'Alumno no encontrado'
-                ], 404);
-            }
-            
-            return response()->json([
-                'status'         => 'success',
-                'data'           => $student,
-                'institution_id' => $request->header('X-Institution-ID')
-            ], 200);
-            
-        } catch (Exception $e) {
-            \Log::error('Error fetching student: ' . $e->getMessage());
-
+public function show(Request $request, $studentId): JsonResponse
+{
+    try {
+        // Llamada limpia al Repository
+        $student = $this->alumnoRepository->getAlumnoConMaterias($studentId);
+        
+        if (!$student) {
             return response()->json([
                 'status'  => 'error',
-                'message' => 'Error al obtener alumno.'
-            ], 500);
+                'message' => 'Alumno no encontrado'
+            ], 404);
         }
+        
+        return response()->json([
+            'status'         => 'success',
+            'data'           => $student,
+            'institution_id' => $request->header('X-Institution-ID')
+        ], 200);
+        
+    } catch (Exception $e) {
+        Log::error('Error fetching student: ' . $e->getMessage());
+        return response()->json(['status' => 'error', 'message' => 'Error interno.'], 500);
     }
+}
 }

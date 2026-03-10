@@ -78,5 +78,6 @@ Route::middleware(['tenant'])->group(function () {
     Route::prefix('inscripciones')->group(function () {
         Route::get('/disponibles', [InscripcionController::class, 'disponibles']);
         Route::post('/inscribir', [InscripcionController::class, 'inscribir']);
+        Route::post('/baja', [InscripcionController::class, 'darDeBaja']); // <-- Nueva ruta
     });
 });

@@ -1,17 +1,19 @@
 <?php
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
 class Curso extends Model
 {
-    protected $table = 'cursos';
-    // Desactivamos timestamps si tu tabla vieja no tiene created_at / updated_at
-    public $timestamps = false; 
+    // ... tu código existente ...
 
-    // Relación con el Plan de Estudios (lo pide el repository: 'curso.plan')
+    /**
+     * Relación con el Plan de Estudio
+     */
     public function plan()
     {
-        return $this->belongsTo(PlanEstudio::class, 'ID_Plan');
+        // Al ser DB Legacy, forzamos las llaves: (ModeloDestino, foreign_key_local, owner_key_destino)
+        return $this->belongsTo(Plan::class, 'ID_Plan', 'ID');
     }
 }

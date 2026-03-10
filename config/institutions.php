@@ -73,11 +73,11 @@ return [
 
     13 => [
         'name'     => 'Instituto Superior Quilmes', // 
-        'host'     => 'geoeducacion.com.ar', // 
+        'host'     => '127.0.0.1', // 
         'port'     => '3306',
         'database' => 'geodnl_iquilmes', // 
-        'username' => 'geodnl_iquilmes', // 
-        'password' => 'LeoGriseDieGi2022', // 
+        'username' => 'root', // 
+        'password' => '8695', // 
     ],
 
     14 => [
@@ -109,20 +109,20 @@ return [
 
     17 => [
         'name'     => 'Instituto Andrea Palladio', // 
-        'host'     => 'geoeducacion.com.ar', // 
+        'host'     => '127.0.0.1', // 
         'port'     => '3306',
         'database' => 'geodnl_palladio', // 
-        'username' => 'geodnl_palladio', // 
-        'password' => 'MarianoClaudio2023', // 
+        'username' => 'root', // 
+        'password' => '8695', // 
     ],
 
     18 => [
         'name'     => 'Instituto Superior Bristol', // 
-        'host'     => 'geoeducacion.com.ar', // 
+        'host'     => '127.0.0.1', // 
         'port'     => '3306',
         'database' => 'geodnl_bristol', // 
-        'username' => 'geodnl_bristol', // 
-        'password' => 'MarianGise2023', // 
+        'username' => 'root', // 
+        'password' => '8695', // 
     ],
 
     19 => [
@@ -145,11 +145,11 @@ return [
 
     21 => [
         'name'     => 'Escuela Universitaria de Teologia', // 
-        'host'     => 'geoeducacion.com.ar', // 
+        'host'     => '127.0.0.1', // 
         'port'     => '3306',
         'database' => 'geodnl_euteo', // 
-        'username' => 'geodnl_euteo', // 
-        'password' => 'Marianito2024', // 
+        'username' => 'root', // 
+        'password' => '8695', // 
     ],
 
     22 => [
