@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
@@ -6,20 +7,47 @@ use Illuminate\Database\Eloquent\Model;
 class Alumno extends Model
 {
     protected $table = 'alumnos';
-    
-    // ESTO ES CLAVE para evitar que busque "id" en minúscula
-    protected $primaryKey = 'ID'; 
+    protected $primaryKey = 'IDPrimary';
+    public $incrementing = true;
+    protected $keyType = 'int';
     public $timestamps = false;
 
-    protected $fillable = ['Apellido', 'Nombre', 'ID_Curso', 'ID_Nivel', 'ID_Situacion'];
+    protected $fillable = [
+        'Nombre',
+        'Apellido',
+        'DNI',
+        'Fecha_de_nacimiento',
+        'Sexo',
+        'Orden',
+        'ID_CursoIndex',
+        'ID_Grupo',
+        'Direccion',
+        'Telefono',
+        'Telefono2',
+        'ID_SituacionIndex',
+        'Nombre_Responsable',
+        'Mail_Reponsable',
+        'Codigo',
+        'Codigo_Bio',
+        'PP',
+        'ID_NivelIndex',
+        'Code_FC',
+        'Perfil',
+        'PPI',
+        'LF',
+        'FCE',
+    ];
 
-    public function curso()
-    {
-        return $this->belongsTo(Curso::class, 'ID_Curso', 'ID'); // Asegurar FK y PK correctas
-    }
-
-    public function notasCursada()
-    {
-        return $this->hasMany(NotaCursada::class, 'ID_Alumno');
-    }
+    protected $casts = [
+        'IDPrimary' => 'integer',
+        'Orden' => 'integer',
+        'ID_CursoIndex' => 'integer',
+        'ID_Grupo' => 'integer',
+        'ID_SituacionIndex' => 'integer',
+        'Codigo_Bio' => 'integer',
+        'ID_NivelIndex' => 'integer',
+        'PPI' => 'integer',
+        'FCE' => 'integer',
+        'Fecha_de_nacimiento' => 'date',
+    ];
 }
