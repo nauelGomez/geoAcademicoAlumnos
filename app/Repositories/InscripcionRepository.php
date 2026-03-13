@@ -9,10 +9,7 @@ use Exception;
 
 class InscripcionRepository
 {
-    /**
-     * Obtiene el listado de materias disponibles para inscripción
-     */
-    public function getMateriasDisponibles(int $alumnoId)
+  public function getMateriasDisponibles(int $alumnoId)
     {
         $alumno = Alumno::with(['curso.plan'])->find($alumnoId);
         if (!$alumno) throw new Exception("Alumno no encontrado.");
@@ -26,21 +23,39 @@ class InscripcionRepository
         
         $resultado = [];
 
-        // 1. Obtenemos cursos del plan hasta el año actual del alumno (Filtro por Orden)
+        // --- OPTIMIZACIÓN DE PERFORMANCE (Evitar N+1) ---
+        // 1. Traemos TODAS las notas del alumno de una vez
+        $notasAlumno = DB::table('notas_cursada')->where('ID_Alumno', $alumnoId)->get();
+
+        // 2. Traemos TODAS las inscripciones actuales del alumno en este ciclo
+        // Retorna un array clave-valor: [ID_Materia_Plan => ID_Materia_Grupal]
+        $inscripcionesActuales = [];
+        if ($cicloLectivo) {
+            $inscripcionesActuales = DB::table('grupos')
+                ->join('materias_grupales', 'grupos.ID_Materia_Grupal', '=', 'materias_grupales.ID')
+                ->join('materias', 'materias_grupales.ID_Materia', '=', 'materias.ID')
+                ->where('grupos.ID_Alumno', $alumnoId)
+                ->where('grupos.ID_Ciclo_Lectivo', $cicloLectivo->ID)
+                ->pluck('grupos.ID_Materia_Grupal', 'materias.ID_Materia_Plan')
+                ->toArray();
+        }
+        // ------------------------------------------------
+
+        // Obtenemos cursos del plan hasta el año actual del alumno (Filtro por Orden)
         $cursosPlan = DB::table('planes_estudio_cursos')
             ->where('ID_Plan', $cursoActual->ID_Plan)
             ->where('Orden', '<=', $cursoActual->Orden_Plan)
             ->orderBy('Orden')->get();
 
         foreach ($cursosPlan as $cursoP) {
-            // 2. Materias definidas en el plan para ese año
+            // Materias definidas en el plan para ese año
             $materiasPlan = DB::table('materias_planes')
                 ->where('ID_Plan', $cursoActual->ID_Plan)
                 ->where('Curso', $cursoP->ID)
                 ->orderBy('Orden')->get();
 
             foreach ($materiasPlan as $mPlan) {
-                // 3. Instancias físicas (materias). Fix para DBs sin columna 'Turno' (Institución 21)
+                // Instancias físicas (materias). Fix para DBs sin columna 'Turno' (Institución 21)
                 $queryMat = DB::table('materias')->where('ID_Materia_Plan', $mPlan->ID);
 
                 if (Schema::hasColumn('materias', 'Turno') && !empty($cursoActual->Turno)) {
@@ -54,31 +69,26 @@ class InscripcionRepository
                 $instancias = $queryMat->get();
 
                 foreach ($instancias as $instancia) {
-                    // 4. CHEQUEO NOTAS: Si ya existe registro de aprobación o cursada, se omite
-                    $tieneNota = DB::table('notas_cursada')
-                        ->where('ID_Alumno', $alumnoId)
-                        ->where('ID_Materia', $instancia->ID)
-                        ->where(function($q) {
-                            $q->where('Final', 'SI')->orWhere('Cursada', 1);
-                        })->exists();
+                    // CHEQUEO NOTAS: Usamos la colección en memoria (0 queries extra)
+                    $tieneNota = $notasAlumno->where('ID_Materia', $instancia->ID)
+                        ->filter(function($nota) {
+                            return $nota->Final == 'SI' || $nota->Cursada == 1;
+                        })->isNotEmpty();
 
                     if ($tieneNota) continue;
 
-                    // 5. Oferta de grupos activos (AI = 'SI')
+                    // Oferta de grupos activos (AI = 'SI')
                     $grupos = DB::table('materias_grupales')
                         ->where('ID_Ciclo_Lectivo', optional($cicloLectivo)->ID)
                         ->where('ID_Materia', $instancia->ID)
                         ->where('AI', 'SI')->get();
 
                     foreach ($grupos as $grupo) {
-                        // 6. Ocultar si el alumno ya tiene reserva en este grupo
-                        $yaInscripto = DB::table('grupos')
-                            ->where('ID_Alumno', $alumnoId)
-                            ->where('ID_Materia_Grupal', $grupo->ID)
-                            ->where('ID_Ciclo_Lectivo', optional($cicloLectivo)->ID)
-                            ->exists();
-
-                        if ($yaInscripto) continue;
+                        
+                        // --- VALIDACIÓN DE INSCRIPCIÓN ---
+                        $grupoInscriptoEnPlan = $inscripcionesActuales[$mPlan->ID] ?? null;
+                        $yaInscriptoEnEsteGrupo = ($grupoInscriptoEnPlan == $grupo->ID);
+                        $yaInscriptoEnOtroGrupo = ($grupoInscriptoEnPlan && $grupoInscriptoEnPlan != $grupo->ID);
 
                         // --- CÁLCULO DE CUPO REAL USANDO COLUMNA 'Alumnos' ---
                         $cupoMax = (int)$grupo->Cupo; 
@@ -103,19 +113,36 @@ class InscripcionRepository
 
                         $eval = $this->validarCorrelativasLegacy($mPlan->ID, $alumnoId);
                         
-                        $puedeInscribirse = ($eval['autorizado'] && $hayLugar && optional($parametros)->HabAI == 1 
-                        && $alumno->ID_Situacion == 2
-                        );
+                        // --- RESOLUCIÓN DE ESTADOS ---
+                        $estado = 'DISPONIBLE';
+                        $puedeInscribirse = false;
+                        $motivosBloqueo = '';
+
+                        if ($yaInscriptoEnEsteGrupo) {
+                            $estado = 'INSCRIPTO';
+                            $motivosBloqueo = 'Ya te encontrás inscripto en este grupo.';
+                        } elseif ($yaInscriptoEnOtroGrupo) {
+                            $estado = 'BLOQUEADA';
+                            $motivosBloqueo = 'Ya te encontrás inscripto en otro grupo de esta materia.';
+                        } else {
+                            $puedeInscribirse = ($eval['autorizado'] && $hayLugar && optional($parametros)->HabAI == 1 && $alumno->ID_Situacion == 2);
+                            $estado = $puedeInscribirse ? 'DISPONIBLE' : 'BLOQUEADA';
+                            $motivosBloqueo = $eval['autorizado'] ? "" : $eval['causal'];
+                        }
+
+                        // Evitamos disparar una query por cada iteración si no hay profesor asignado
+                        $nombreDocente = DB::table('personal')->where('ID', $grupo->ID_Personal)->value('Apellido');
+                        $docenteStr = $nombreDocente ? 'Prof. ' . $nombreDocente : 'A Designar';
 
                         $resultado[] = [
                             'id_materia_grupal' => $grupo->ID,
                             'materia' => $grupo->Materia,
-                            'docente' => 'Prof. ' . (DB::table('personal')->where('ID', $grupo->ID_Personal)->value('Apellido') ?? 'A Designar'),
+                            'docente' => $docenteStr,
                             'cupo_disponible' => $disponibilidadTexto,
                             'permite_inscripcion' => $puedeInscribirse,
-                            'estado' => $puedeInscribirse ? 'DISPONIBLE' : 'BLOQUEADA',
-                            'motivos_bloqueo' => $eval['autorizado'] ? "" : $eval['causal'],
-                            'permite_excepcion' => !$eval['autorizado'] && (optional($parametros)->HabSE == 1)
+                            'estado' => $estado,
+                            'motivos_bloqueo' => $motivosBloqueo,
+                            'permite_excepcion' => !$eval['autorizado'] && (optional($parametros)->HabSE == 1) && !$yaInscriptoEnEsteGrupo && !$yaInscriptoEnOtroGrupo
                         ];
                     }
                 }
