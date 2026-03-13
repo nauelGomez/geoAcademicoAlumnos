@@ -18,12 +18,16 @@ public function getMateriasDisponibles(int $alumnoId)
     $esInstitucion21 = (optional($cursoActual)->ID_Institucion == 21);
 
     // Obtenemos el ciclo vigente
-    $cicloLectivo = DB::table('ciclo_lectivo')
-        ->where('ID_Nivel', $alumno->ID_Nivel)
-        ->where('Vigente', 'SI')->first();
+    $nivelAlumno = $alumno->ID_Nivel; // Si es null, asume nivel 2 por defecto
 
+    $cicloLectivo = DB::table('ciclo_lectivo')
+    ->where('ID_Nivel', $nivelAlumno)
+    ->where('Vigente', 'SI')->first();
+    if (!$cicloLectivo) {
+        throw new Exception("El alumno no tiene un nivel asignado o no hay ciclo vigente para el nivel " . $nivelAlumno);
+    }
     $parametros = DB::table('nivel_parametros')->where('ID_Nivel', $alumno->ID_Nivel)->first();
-    $habilitadoGeneral = (optional($parametros)->HabAI == 1); //
+    $habilitadoGeneral = (optional($parametros)->HabAI == 1);
 
     $resultado = [];
 
@@ -41,7 +45,7 @@ public function getMateriasDisponibles(int $alumnoId)
         $instancia = DB::table('materias')
             ->where('ID_Materia_Plan', $mPlan->ID)
             ->first();
-
+        \Log::info("Analizando Materia Plan ID {$mPlan->ID} - Instancia encontrada: " . ($instancia ? "Sí (ID_Materia {$instancia->ID})" : "No"));
         if (!$instancia) {
             $estado = "NO DISPONIBLE";
             $motivo = "No existe registro en tabla 'materias' para este ID_Materia_Plan";
@@ -63,6 +67,7 @@ public function getMateriasDisponibles(int $alumnoId)
                 $motivo = "El alumno ya aprobó o regularizó esta materia";
             } else {
                 // C. Buscar la oferta real en materias_grupales
+                \Log::info("Buscando grupo para ID_Materia_Plan {$mPlan->ID} (ID_Materia {$instancia->ID}) con AI='SI' y ciclo vigente ID {$cicloLectivo->ID}");
                 $grupoEncontrado = DB::table('materias_grupales')
                     ->where('ID_Materia', $instancia->ID)
                     ->where('AI', 'SI') //

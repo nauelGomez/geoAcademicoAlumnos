@@ -103,10 +103,12 @@ class InscripcionRepository
 
                         $eval = $this->validarCorrelativasLegacy($mPlan->ID, $alumnoId);
                         
-                        $puedeInscribirse = ($eval['autorizado'] && $hayLugar && optional($parametros)->HabAI == 1 && $alumno->ID_Situacion == 2);
+                        $puedeInscribirse = ($eval['autorizado'] && $hayLugar && optional($parametros)->HabAI == 1 
+                        && $alumno->ID_Situacion == 2
+                        );
 
                         $resultado[] = [
-                            'id_materia_grupal' => $grupo->ID, 
+                            'id_materia_grupal' => $grupo->ID,
                             'materia' => $grupo->Materia,
                             'docente' => 'Prof. ' . (DB::table('personal')->where('ID', $grupo->ID_Personal)->value('Apellido') ?? 'A Designar'),
                             'cupo_disponible' => $disponibilidadTexto,

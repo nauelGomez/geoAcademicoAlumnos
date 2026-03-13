@@ -29,10 +29,10 @@ public function disponibles(Request $request)
 
             // ELEGIR REPOSITORY: 
             // Si es la 21, instanciamos el especial. Si no, usamos el que ya tiene el controller ($this->inscripcionRepo)
-            $repo = ($instId == 21) 
-                ? new \App\Repositories\InscripcionEutRepository() 
-                : $this->inscripcionRepo;
-
+            // $repo = ($instId == 21) 
+            //     ? new \App\Repositories\InscripcionEutRepository() 
+            //     : $this->inscripcionRepo;
+            $repo = $this->inscripcionRepo;
             $resultado = $repo->getMateriasDisponibles((int) $alumnoId);
 
             if (isset($resultado['status']) && $resultado['status'] === 'error') {
