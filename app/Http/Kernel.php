@@ -14,10 +14,13 @@ class Kernel extends HttpKernel
      * @var array<int, class-string|string>
      */
     protected $middleware = [
+        // ❌ APAGADOS PORQUE SON DE LARAVEL 8
         // \App\Http\Middleware\TrustHosts::class,
-        \App\Http\Middleware\TrustProxies::class,
+        // \App\Http\Middleware\TrustProxies::class,
+        // \App\Http\Middleware\PreventRequestsDuringMaintenance::class,
+        
+        // ✅ FILTROS SEGUROS PARA LARAVEL 7
         \Fruitcake\Cors\HandleCors::class,
-        \App\Http\Middleware\PreventRequestsDuringMaintenance::class,
         \Illuminate\Foundation\Http\Middleware\ValidatePostSize::class,
         \App\Http\Middleware\TrimStrings::class,
         \Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull::class,
@@ -41,7 +44,8 @@ class Kernel extends HttpKernel
 
         'api' => [
             // \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
-            'throttle:api',
+            // ⚠️ DOWNGRADE DE THROTTLE: Como borramos el RateLimiter de L8, volvemos a la sintaxis L7 (60 peticiones por minuto)
+            'throttle:60,1',
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
         ],
     ];
@@ -63,6 +67,8 @@ class Kernel extends HttpKernel
         'signed' => \Illuminate\Routing\Middleware\ValidateSignature::class,
         'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
+        
+        // Tus Middlewares Custom (Están perfectos)
         'institution.db' => \App\Http\Middleware\SetDatabaseConnection::class,
         'tenant' => \App\Http\Middleware\SetTenantConnection::class,
     ];

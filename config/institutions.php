@@ -148,8 +148,8 @@ return [
         'host'     => '127.0.0.1', // 
         'port'     => '3306',
         'database' => 'geodnl_euteo', // 
-        'username' => 'geodnl_euteo', // 
-        'password' => 'Marianito2024', // 
+        'username' => 'root', // 
+        'password' => '8695', // 
     ],
 
     22 => [
