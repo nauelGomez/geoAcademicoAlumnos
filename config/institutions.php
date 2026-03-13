@@ -73,11 +73,11 @@ return [
 
     13 => [
         'name'     => 'Instituto Superior Quilmes', // 
-        'host'     => '127.0.0.1', // 
+        'host'     => 'geoeducacion.com.ar', // 
         'port'     => '3306',
         'database' => 'geodnl_iquilmes', // 
-        'username' => 'root', // 
-        'password' => '8695', // 
+        'username' => 'geodnl_iquilmes', // 
+        'password' => 'LeoGriseDieGi2022', // 
     ],
 
     14 => [
@@ -112,17 +112,17 @@ return [
         'host'     => '127.0.0.1', // 
         'port'     => '3306',
         'database' => 'geodnl_palladio', // 
-        'username' => 'root', // 
-        'password' => '8695', // 
+        'username' => 'geodnl_palladio', // 
+        'password' => 'MarianoClaudio2023', // 
     ],
 
     18 => [
         'name'     => 'Instituto Superior Bristol', // 
-        'host'     => '127.0.0.1', // 
+        'host'     => 'geoeducacion.com.ar', // 
         'port'     => '3306',
         'database' => 'geodnl_bristol', // 
-        'username' => 'root', // 
-        'password' => '8695', // 
+        'username' => 'geodnl_bristol', // 
+        'password' => 'MarinGise2023', // 
     ],
 
     19 => [
@@ -148,8 +148,8 @@ return [
         'host'     => '127.0.0.1', // 
         'port'     => '3306',
         'database' => 'geodnl_euteo', // 
-        'username' => 'root', // 
-        'password' => '8695', // 
+        'username' => 'geodnl_euteo', // 
+        'password' => 'Marianito2024', // 
     ],
 
     22 => [
