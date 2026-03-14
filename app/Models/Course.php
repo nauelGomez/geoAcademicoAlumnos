@@ -2,15 +2,12 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Course extends Model
 {
-    use HasFactory;
-
     protected $connection = 'tenant';
 
     protected $table = 'cursos';
@@ -26,25 +23,29 @@ class Course extends Model
         'ID_Nivel' => 'integer'
     ];
 
+    // --- RELACIONES CON SINTAXIS "VINTAGE" ---
+
     public function level(): BelongsTo
     {
-        return $this->belongsTo(Level::class, 'ID_Nivel', 'ID');
+        return $this->belongsTo('App\Models\Level', 'ID_Nivel', 'ID');
     }
 
     public function students(): HasMany
     {
-        return $this->hasMany(Student::class, 'ID_Curso', 'ID');
+        return $this->hasMany('App\Models\Student', 'ID_Curso', 'ID');
     }
 
     public function subjects(): HasMany
     {
-        return $this->hasMany(Subject::class, 'ID_Curso', 'ID');
+        return $this->hasMany('App\Models\Subject', 'ID_Curso', 'ID');
     }
 
     public function tasks(): HasMany
     {
-        return $this->hasMany(Task::class, 'ID_Curso', 'ID');
+        return $this->hasMany('App\Models\Task', 'ID_Curso', 'ID');
     }
+
+    // --- SCOPES ---
 
     public function scopeByLevel($query, $levelId)
     {

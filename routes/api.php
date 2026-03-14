@@ -2,13 +2,7 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\AlumnoController;
-use App\Http\Controllers\AttendanceController;
-use App\Http\Controllers\GradeController;
-use App\Http\Controllers\InstitutionController;
-use App\Http\Controllers\NewsController;
-use App\Http\Controllers\TaskController;
-use App\Http\Controllers\InscripcionController;
+
 /*
 |--------------------------------------------------------------------------
 | Public & System Routes
@@ -21,10 +15,11 @@ Route::get('/hello', function () {
         'project' => 'geoAcademicoAlumnos'
     ]);
 });
+
 // Estas rutas consultan la DB Master para listar los colegios
 Route::prefix('institutions')->group(function () {
-    Route::get('/', [InstitutionController::class, 'index']);
-    Route::get('/{institutionId}', [InstitutionController::class, 'show']);
+    Route::get('/', 'InstitutionController@index');
+    Route::get('/{institutionId}', 'InstitutionController@show');
 });
 
 /*
@@ -34,50 +29,51 @@ Route::prefix('institutions')->group(function () {
 */
 Route::middleware(['tenant'])->group(function () {
 
-    // --- Usuario Autenticado ---
-    Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
-        return $request->user();
-    });
+    // ❌ APAGADO PORQUE SACAMOS SANCTUM
+    // Si más adelante necesitás login, usaremos 'auth:api' estándar de L5.5
+    // Route::middleware('auth:api')->get('/user', function (Request $request) {
+    //     return $request->user();
+    // });
 
     // --- Alumnos ---
     Route::prefix('alumnos')->group(function () {
-        Route::get('/', [AlumnoController::class, 'index']);
-        Route::get('/{studentId}', [AlumnoController::class, 'show']);
+        Route::get('/', 'AlumnoController@index');
+        Route::get('/{studentId}', 'AlumnoController@show');
     });
 
     // --- Tareas / Tasks ---
     Route::prefix('tasks')->group(function () {
-        Route::get('/', [TaskController::class, 'index']);
-        Route::get('/stats', [TaskController::class, 'getTaskStats']);
-        Route::get('/{taskId}', [TaskController::class, 'show']);
-        Route::get('/student/{studentId}', [TaskController::class, 'studentTasks']);
-        Route::post('/resolution', [TaskController::class, 'submitResolution']);
+        Route::get('/', 'TaskController@index');
+        Route::get('/stats', 'TaskController@getTaskStats');
+        Route::get('/{taskId}', 'TaskController@show');
+        Route::get('/student/{studentId}', 'TaskController@studentTasks');
+        Route::post('/resolution', 'TaskController@submitResolution');
     });
 
     // --- Calificaciones / Grades ---
     Route::prefix('grades')->group(function () {
-        Route::get('/student/{studentId}', [GradeController::class, 'studentGrades']);
-        Route::get('/student/{studentId}/summary', [GradeController::class, 'gradesSummary']);
+        Route::get('/student/{studentId}', 'GradeController@studentGrades');
+        Route::get('/student/{studentId}/summary', 'GradeController@gradesSummary');
     });
 
     // --- Noticias / News ---
     Route::prefix('news')->group(function () {
-        Route::get('/student/{studentId}', [NewsController::class, 'studentNews']);
-        Route::get('/student/{studentId}/summary', [NewsController::class, 'newsSummary']);
-        Route::post('/student/{studentId}/{newsId}/read', [NewsController::class, 'markAsRead']);
+        Route::get('/student/{studentId}', 'NewsController@studentNews');
+        Route::get('/student/{studentId}/summary', 'NewsController@newsSummary');
+        Route::post('/student/{studentId}/{newsId}/read', 'NewsController@markAsRead');
     });
 
     // --- Asistencia / Attendance ---
     Route::prefix('attendance')->group(function () {
-        Route::get('/student/{studentId}/summary', [AttendanceController::class, 'summary']);
-        Route::get('/student/{studentId}/subjects', [AttendanceController::class, 'subjectsAttendance']);
-        Route::get('/student/{studentId}/subject/{subjectId}', [AttendanceController::class, 'subjectDetail']);
+        Route::get('/student/{studentId}/summary', 'AttendanceController@summary');
+        Route::get('/student/{studentId}/subjects', 'AttendanceController@subjectsAttendance');
+        Route::get('/student/{studentId}/subject/{subjectId}', 'AttendanceController@subjectDetail');
     });
     
     // --- Inscripciones / Enrollments ---
     Route::prefix('inscripciones')->group(function () {
-        Route::get('/disponibles', [InscripcionController::class, 'disponibles']);
-        Route::post('/inscribir', [InscripcionController::class, 'inscribir']);
-        Route::post('/baja', [InscripcionController::class, 'darDeBaja']); // <-- Nueva ruta
+        Route::get('/disponibles', 'InscripcionController@disponibles');
+        Route::post('/inscribir', 'InscripcionController@inscribir');
+        Route::post('/baja', 'InscripcionController@darDeBaja');
     });
 });

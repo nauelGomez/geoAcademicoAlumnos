@@ -2,14 +2,11 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class SubjectGroup extends Model
 {
-    use HasFactory;
-
     protected $connection = 'tenant';
 
     protected $table = 'materias_grupales';
@@ -22,11 +19,13 @@ class SubjectGroup extends Model
 
     public function tasks(): HasMany
     {
-        return $this->hasMany(Task::class, 'ID_Materia', 'ID');
+        // Pasado a string
+        return $this->hasMany('App\Models\Task', 'ID_Materia', 'ID');
     }
 
     public function groups(): HasMany
     {
-        return $this->hasMany(Group::class, 'ID_Materia_Grupal', 'ID');
+        // Pasado a string (Acá estaba el error rojo)
+        return $this->hasMany('App\Models\Group', 'ID_Materia_Grupal', 'ID');
     }
 }
