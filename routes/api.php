@@ -76,4 +76,19 @@ Route::middleware(['tenant'])->group(function () {
         Route::post('/inscribir', 'InscripcionController@inscribir');
         Route::post('/baja', 'InscripcionController@darDeBaja');
     });
+
+    // --- Dashboard ---
+    Route::prefix('dashboard')->group(function () {
+        Route::get('/', 'DashboardController@getStudentDashboard');
+    });
+
+    // --- Calificaciones / Course Grades ---
+    Route::prefix('grades')->group(function () {
+        Route::get('/student/{studentId}', 'CourseGradeController@studentGrades');
+    });
+        
+    // --- Documentación / Documentation ---
+    Route::prefix('documentation')->group(function () {
+        Route::get('/student/{studentId}', 'DocumentationController@studentDocumentation');
+    });
 });
