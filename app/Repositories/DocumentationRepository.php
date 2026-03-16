@@ -20,7 +20,7 @@ class DocumentationRepository
             ->where('Vigente', 'SI')
             ->value('Ciclo_lectivo');
 
-        // LA CONSULTA OPTIMIZADA: Join directo entre documento y el detalle de envío
+        // LA CONSULTA OPTIMIZADA (Sin la columna fantasma "Mensaje")
         $documentos = DB::table('envio_documentacion_detalle as edd')
             ->join('envio_documentacion as ed', 'edd.ID_Doc', '=', 'ed.ID')
             ->where('edd.ID_Destinatario', $studentId)
@@ -35,32 +35,32 @@ class DocumentationRepository
                 'edd.Leido',
                 'ed.Fecha',
                 'ed.Titulo',
-                'ed.Descripcion',
-                'ed.Mensaje'
+                'ed.Descripcion' // <-- Sacamos ed.Mensaje de acá
             )
             ->orderByDesc('ed.ID')
             ->get()
             ->map(function ($doc) {
-                // Formateamos la fecha con Carbon
+                // Formateamos la fecha
                 $fecha = $doc->Fecha ? Carbon::parse($doc->Fecha)->format('d/m/Y') : 'S/F';
                 
-                // En el legacy había un cruce raro entre Titulo, Descripcion y Mensaje según un IF.
-                // Limpiamos eso priorizando campos que no estén vacíos.
-                $titulo = trim($doc->Titulo) ?: (trim($doc->Descripcion) ?: 'Sin Título');
-                $mensaje = trim($doc->Mensaje) ?: (trim($doc->Descripcion) ?: 'S/D');
+                // Limpiamos los textos como lo hacía el legacy
+                $titulo = trim($doc->Titulo) ?: 'Sin Título';
+                $mensaje = trim($doc->Descripcion) ?: 'S/D';
 
                 return [
                     'id_envio' => $doc->ID_Envio,
                     'fecha'    => $fecha,
                     'titulo'   => $titulo,
-                    'mensaje'  => $mensaje,
+                    'mensaje'  => $mensaje, // Reutilizamos la descripción como mensaje para el front
                     'leido'    => (bool) $doc->Leido
                 ];
             });
 
         return [
-            'alumno'     => $alumno->Nombre . ' ' . $alumno->Apellido,
-            'ciclo'      => $ciclo ?? 'Sin ciclo vigente',
+            'perfil' => [
+                'alumno' => $alumno->Nombre . ' ' . $alumno->Apellido,
+                'ciclo'  => $ciclo ?? 'Sin ciclo vigente'
+            ],
             'documentos' => $documentos
         ];
     }
