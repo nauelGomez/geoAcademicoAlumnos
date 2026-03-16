@@ -1,57 +1,57 @@
-{
-    "name": "laravel/laravel",
-    "type": "project",
-    "description": "The Laravel Framework.",
-    "keywords": ["framework", "laravel"],
-    "license": "MIT",
-    "require": {
-        "php": ">=7.0.0 <7.2.0",
-        "laravel/framework": "5.5.*",
-        "fideloper/proxy": "~3.3",
-        "laravel/tinker": "~1.0",
-        "fruitcake/laravel-cors": "^1.0"
-    },
-    "require-dev": {
-        "filp/whoops": "~2.0",
-        "fzaninotto/faker": "~1.4",
-        "mockery/mockery": "~1.0",
-        "phpunit/phpunit": "~6.0",
-        "symfony/thanks": "^1.0"
-    },
-    "autoload": {
-        "psr-4": {
-            "App\\": "app/"
+    {
+        "name": "laravel/laravel",
+        "type": "project",
+        "description": "The Laravel Framework.",
+        "keywords": ["framework", "laravel"],
+        "license": "MIT",
+        "require": {
+            "php": ">=7.0.0 <7.2.0",
+            "laravel/framework": "5.5.*",
+            "fideloper/proxy": "~3.3",
+            "laravel/tinker": "~1.0",
+            "fruitcake/laravel-cors": "^1.0"
         },
-        "classmap": [
-            "database/seeds",
-            "database/factories"
-        ]
-    },
-    "autoload-dev": {
-        "psr-4": {
-            "Tests\\": "tests/"
+        "require-dev": {
+            "filp/whoops": "~2.0",
+            "fzaninotto/faker": "~1.4",
+            "mockery/mockery": "~1.0",
+            "phpunit/phpunit": "~6.0",
+            "symfony/thanks": "^1.0"
+        },
+        "autoload": {
+            "psr-4": {
+                "App\\": "app/"
+            },
+            "classmap": [
+                "database/seeds",
+                "database/factories"
+            ]
+        },
+        "autoload-dev": {
+            "psr-4": {
+                "Tests\\": "tests/"
+            }
+        },
+        "extra": {
+            "laravel": {
+                "dont-discover": []
+            }
+        },
+        "config": {
+            "optimize-autoloader": true,
+            "preferred-install": "dist",
+            "sort-packages": true,
+            "platform": {
+                "php": "7.0.33"
+            },
+            "allow-plugins": {
+                "kylekatarnls/update-helper": true,
+                "symfony/thanks": true
+            },
+            "classmap": [
+        "database/seeds",
+        "database/factories"
+    ]
         }
-    },
-    "extra": {
-        "laravel": {
-            "dont-discover": []
-        }
-    },
-    "config": {
-        "optimize-autoloader": true,
-        "preferred-install": "dist",
-        "sort-packages": true,
-        "platform": {
-            "php": "7.0.33"
-        },
-        "allow-plugins": {
-            "kylekatarnls/update-helper": true,
-            "symfony/thanks": true
-        },
-        "classmap": [
-    "database/seeds",
-    "database/factories"
-]
+        
     }
-    
-}
