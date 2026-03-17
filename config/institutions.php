@@ -112,8 +112,8 @@ return [
         'host'     => '127.0.0.1', // 
         'port'     => '3306',
         'database' => 'geodnl_palladio', // 
-        'username' => 'geodnl_palladio', // 
-        'password' => 'MarianoClaudio2023', // 
+        'username' => 'root', // 
+        'password' => '', // 
     ],
 
     18 => [
@@ -149,7 +149,7 @@ return [
         'port'     => '3306',
         'database' => 'geodnl_euteo', // 
         'username' => 'root', // 
-        'password' => '8695', // 
+        'password' => '', // 
     ],
 
     22 => [
