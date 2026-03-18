@@ -49,16 +49,30 @@ class SetTenantConnection
         Config::set('database.connections.tenant.charset', 'utf8mb4');
         Config::set('database.connections.tenant.collation', 'utf8mb4_unicode_ci');
         Config::set('database.connections.tenant.prefix', '');
-        Config::set('database.connections.tenant.strict', false); // O true, según tu MySQL 5.7
+        Config::set('database.connections.tenant.strict', false); 
         
-        // Configuraciones estándar de MySQL en Laravel para evitar dolores de cabeza
-        Config::set('database.connections.tenant.charset', 'utf8mb4');
-        Config::set('database.connections.tenant.collation', 'utf8mb4_unicode_ci');
-        Config::set('database.connections.tenant.prefix', '');
-        Config::set('database.connections.tenant.strict', false); // O true, según tu MySQL 5.7
         // 4. Purgamos la conexión previa y forzamos a Laravel a conectarse a la nueva DB
         DB::purge('tenant');
         DB::reconnect('tenant');
+
+        if (isset($credentials['mysql_gral']) && is_array($credentials['mysql_gral'])) {
+            $gral = $credentials['mysql_gral'];
+
+            Config::set('database.connections.mysql_gral.driver', 'mysql');
+            Config::set('database.connections.mysql_gral.host', $gral['host']);
+            Config::set('database.connections.mysql_gral.port', $gral['port']);
+            Config::set('database.connections.mysql_gral.database', $gral['database']);
+            Config::set('database.connections.mysql_gral.username', $gral['username']);
+            Config::set('database.connections.mysql_gral.password', $gral['password']);
+
+            Config::set('database.connections.mysql_gral.charset', 'utf8mb4');
+            Config::set('database.connections.mysql_gral.collation', 'utf8mb4_unicode_ci');
+            Config::set('database.connections.mysql_gral.prefix', '');
+            Config::set('database.connections.mysql_gral.strict', false);
+
+            DB::purge('mysql_gral');
+            DB::reconnect('mysql_gral');
+        }
 
         // 5. Establecemos 'tenant' como la conexión por defecto para todo el ciclo de vida de esta request
         Config::set('database.default', 'tenant');

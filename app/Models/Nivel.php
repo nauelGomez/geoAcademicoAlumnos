@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 
 class Nivel extends Model
 {
+    protected $connection = 'tenant';
+
     // El nombre exacto de la tabla en tu BD
     protected $table = 'nivel';
     

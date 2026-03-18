@@ -19,11 +19,11 @@ return [
 
     3 => [
         'name'     => 'Escuela GEO', // 
-        'host'     => 'geoeducacion.com.ar', // 
+        'host'     => '127.0.0.1', // 
         'port'     => '3306',
         'database' => 'dmendoza_pesge_demo', // 
-        'username' => 'dmendoza_demo', // 
-        'password' => 'Lola2704', // 
+        'username' => 'demo', // 
+        'password' => '8695', // 
     ],
 
     6 => [
@@ -64,11 +64,11 @@ return [
 
     12 => [
         'name'     => 'Instituto Superior GEO', // 
-        'host'     => 'geoeducacion.com.ar', // 
+        'host'     => '127.0.0.1', // 
         'port'     => '3306',
         'database' => 'geodnl_geoaca', // 
-        'username' => 'geodnl_geoaca', // 
-        'password' => 'Lolex2016', // 
+        'username' => 'root', // 
+        'password' => '8695', // 
     ],
 
     13 => [
@@ -262,11 +262,11 @@ return [
 
     34 => [
         'name'     => 'Escuela de Hoy', // 
-        'host'     => 'geoeducacion.com.ar', // 
+        'host'     => '127.0.0.1', // 
         'port'     => '3306',
         'database' => 'geodnl_hoy', // 
-        'username' => 'geodnl_hoy', // 
-        'password' => 'Ezeiza2025', // 
+        'username' => 'root', // 
+        'password' => '8695', // 
     ],
 
     35 => [
@@ -448,4 +448,11 @@ return [
         'username' => 'geodnl_huinco', // 
         'password' => 'Navarra2024', // 
     ],
+        'mysql_gral' => [
+        'host' => '127.0.0.1',
+        'port' => 3306,
+        'database' => 'dmendoza_pr_el_gral_familias',
+        'username' => 'root',
+        'password' => '8695',
+        ],
 ];
