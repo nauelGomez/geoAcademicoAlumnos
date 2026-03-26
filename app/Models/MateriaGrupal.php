@@ -6,8 +6,15 @@ use Illuminate\Database\Eloquent\Model;
 class MateriaGrupal extends Model
 {
     protected $table = 'materias_grupales';
-    protected $fillable = ['ID_Ciclo_Lectivo', 'ID_Materia', 'ID_Personal', 'Cupo', 'AI'];
+    protected $primaryKey = 'ID';
     public $timestamps = false;
+
+    protected $fillable = ['ID_Ciclo_Lectivo', 'ID_Materia', 'ID_Personal', 'Cupo', 'AI'];
+
+    public function docente()
+    {
+        return $this->belongsTo(Personal::class, 'ID_Personal', 'ID');
+    }
 
     public function inscripciones()
     {

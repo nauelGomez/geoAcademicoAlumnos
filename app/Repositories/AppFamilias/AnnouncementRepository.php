@@ -62,60 +62,41 @@ class AnnouncementRepository
         return $merged;
     }
 
-    public function getAnnouncementDetail($studentId, $tipo, $code, $familyId, $email)
+    public function getAnnouncementDetail($studentId, $tipo, $code, $familyId)
     {
         $hoy = date('Y-m-d');
         $hora = date('H:i:s');
         $data = null;
         $remitente = '';
 
-        if ($tipo == 1) { // Comunicado General
-            // Buscamos el detalle validando código, destinatario y email
-            $detalle = DB::table('comunicados_detalle')
-                ->where('Aleatorio', $code)
-                ->where('ID_Destinatario', $studentId)
-                ->where('MailD', $email)
-                ->first();
-
+        if ($tipo == 1) { // Comunicado
+            $detalle = DB::table('comunicados_detalle')->where('Aleatorio', $code)->first();
             if (!$detalle) return null;
 
-            // Marcar como leído
+            // Marcar lectura
             DB::table('comunicados_detalle')->where('ID', $detalle->ID)->update([
-                'Leido' => 1,
-                'Fecha_Leido' => $hoy,
-                'Hora_Leido' => $hora,
-                'Envio' => 1
+                'Leido' => 1, 'Fecha_Leido' => $hoy, 'Hora_Leido' => $hora, 'Envio' => 1
             ]);
 
             $com = DB::table('comunicados')->where('ID', $detalle->ID_Comunicado)->first();
             $remitente = $this->getRemitente($com);
             $data = $com;
-
-        } else { // Tipo 2: Notificación Personal
-            $notif = DB::table('notificaciones_enviadas')
-                ->where('Aleatorio', $code)
-                ->where('ID_Alumno', $studentId)
-                ->first();
-
+        } else { // Notificación
+            $notif = DB::table('notificaciones_enviadas')->where('Aleatorio', $code)->first();
             if (!$notif) return null;
 
-            // Marcar como leído
+            // Marcar lectura
             DB::table('notificaciones_enviadas')->where('ID', $notif->ID)->update([
-                'Leido' => 1,
-                'Fecha_Leido' => $hoy,
-                'Hora_Leido' => $hora,
-                'ID_Lectura' => $familyId,
-                'Enviada' => 1
+                'Leido' => 1, 'Fecha_Leido' => $hoy, 'Hora_Leido' => $hora, 'ID_Lectura' => $familyId, 'Enviada' => 1
             ]);
 
             $autor = DB::table('personal')->where('ID', $notif->ID_Personal)->first();
-            $remitente = "Prof. " . ($autor->Apellido ?? "Docente");
-            
+            $remitente = "Prof. " . ($autor->Apellido ?? "") . ", " . ($autor->Nombre ?? "");
             $data = (object)[
                 'Titulo' => $notif->Titulo,
                 'Descripcion' => $notif->Mensaje,
                 'Fecha' => $notif->Fecha,
-                'Hora' => date('H:i', strtotime($notif->Fecha)),
+                'Hora' => date('H:i', strtotime($notif->Fecha)), // Fallback
                 'Adjunto' => $notif->Adjunto
             ];
         }

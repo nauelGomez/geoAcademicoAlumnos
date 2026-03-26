@@ -2,10 +2,30 @@
 
 namespace App\Repositories\AppFamilias;
 
+use App\Models\Alumno;
 use Illuminate\Support\Facades\DB;
 
 class ExamBoardRepository
 {
+    /**
+     * Obtiene las mesas de examen disponibles o inscriptas para el alumno.
+     * @param int $studentId
+     * @return array
+     */
+    public function getExamBoards($studentId)
+    {
+        $alumno = Alumno::find($studentId);
+        if (!$alumno) {
+            return [];
+        }
+
+        // WINDSURF: Acá irá la lógica real de cruce de tablas para las mesas de examen legacy.
+        // Por ahora devolvemos un array vacío para estabilizar el endpoint.
+        $mesas = []; 
+
+        return $mesas;
+    }
+
     public function getStudentExamData($studentId)
     {
         $alumno = DB::table('alumnos')->where('ID', $studentId)->first();

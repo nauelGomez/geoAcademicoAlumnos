@@ -3,45 +3,31 @@
 namespace App\Http\Controllers;
 
 use App\Repositories\CourseGradeRepository;
-use Exception;
-use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Log;
+use Illuminate\Http\Request;
 
-class CourseGradeController extends Controller
+class CourseGradeController extends BaseInstitutionController
 {
-    protected $courseGradeRepo;
+    protected $repo;
 
-    public function __construct(CourseGradeRepository $courseGradeRepo)
+    public function __construct(CourseGradeRepository $repo)
     {
-        $this->courseGradeRepo = $courseGradeRepo;
+        $this->repo = $repo;
     }
 
-    public function studentGrades(int $studentId): JsonResponse
+    public function studentGrades($studentId)
     {
         try {
-            // Renombramos el método también para mantener la facha en inglés
-            $data = $this->courseGradeRepo->getCourseGradesEvolution($studentId);
-
-            if (!$data) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'No se encontró el alumno o no tiene un plan de estudio asignado.'
-                ], 404);
-            }
+            $data = $this->repo->getGrades($studentId);
 
             return response()->json([
                 'success' => true,
-                'data'    => $data,
-                'message' => 'Course grades loaded de nashe.'
-            ], 200);
-
-        } catch (Exception $e) {
-            Log::error('Error cargando notas cursadas: ' . $e->getMessage() . ' en ' . $e->getFile() . ':' . $e->getLine());
-
+                'data' => $data
+            ]);
+        } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
                 'message' => 'Ocurrió un error al cargar las notas.',
-                'error'   => env('APP_DEBUG') ? $e->getMessage() : 'Error interno'
+                'error' => $e->getMessage()
             ], 500);
         }
     }

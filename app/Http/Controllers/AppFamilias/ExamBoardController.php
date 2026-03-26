@@ -15,15 +15,25 @@ class ExamBoardController extends BaseInstitutionController
         $this->repo = $repo;
     }
 
-    public function index(Request $request, $studentId)
+    /**
+     * Listado de mesas de examen para el alumno.
+     *
+     * @param int $studentId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function index($studentId)
     {
         try {
-            $data = $this->repo->getStudentExamData($studentId);
-            return response()->json(['success' => true, 'data' => $data]);
+            $data = $this->repo->getExamBoards($studentId);
+
+            return response()->json([
+                'success' => true,
+                'data' => $data
+            ]);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error al cargar mesas de examen',
+                'message' => 'Error al cargar las mesas de examen.',
                 'debug' => $e->getMessage()
             ], 500);
         }

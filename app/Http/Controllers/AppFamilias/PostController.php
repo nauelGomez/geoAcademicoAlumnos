@@ -33,27 +33,4 @@ class PostController extends BaseInstitutionController
             ], 500);
         }
     }
-
-    public function show(Request $request, $postId, $studentId)
-    {
-        try {
-            $email = $request->header('X-Family-Email');
-            $data = $this->repo->getPostDetail($postId, $studentId, $email);
-
-            if (!$data) {
-                return response()->json(['success' => false, 'message' => 'Publicación no encontrada'], 404);
-            }
-
-            return response()->json([
-                'success' => true,
-                'data' => $data
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error al abrir la publicación',
-                'debug' => $e->getMessage()
-            ], 500);
-        }
-    }
 }

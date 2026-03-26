@@ -3,6 +3,11 @@
 namespace App\Repositories\AppFamilias;
 
 use App\Models\Alumno;
+use App\Models\Muro;
+use App\Models\MuroDetalle;
+use App\Models\MuroLectura;
+use App\Models\Personal;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class FamilyWallRepository
@@ -80,5 +85,107 @@ class FamilyWallRepository
             ->where('d.B', 0)
             ->whereNull('l.ID') // Que no tengan registro de lectura
             ->count();
+    }
+
+    /**
+     * Obtener el detalle del muro con todas sus intervenciones.
+     * Marca automáticamente los mensajes del docente como leídos.
+     *
+     * @param int $wallId ID del muro
+     * @param int $studentId ID del alumno
+     * @return array Datos del muro con intervenciones
+     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
+     */
+    public function getWallDetails($wallId, $studentId)
+    {
+        $muro = Muro::with(['docente', 'detalles'])->where('B', 0)->findOrFail($wallId);
+        
+        // Marcar como leídos los mensajes del docente que el alumno no haya visto
+        $this->markWallAsRead($wallId, $studentId);
+
+        // Procesar intervenciones con datos del usuario
+        $intervenciones = $muro->detalles->map(function($item) {
+            // Determinar el usuario según el tipo
+            if ($item->Tipo_Usuario === 'D') {
+                $user = Personal::find($item->ID_Usuario);
+                $perfil = $user ? $user->PIC : 'default.png';
+                $nombre = $user ? "{$user->Apellido}, {$user->Nombre}" : 'Docente';
+            } else {
+                $user = Alumno::find($item->ID_Usuario);
+                $perfil = $user ? $user->Perfil : 'default.png';
+                $nombre = $user ? "{$user->Apellido}, {$user->Nombre}" : 'Alumno';
+            }
+
+            return [
+                'id' => $item->ID,
+                'mensaje' => $item->Mensaje,
+                'fecha' => Carbon::parse($item->Fecha)->format('d/m/Y'),
+                'hora' => $item->Hora,
+                'usuario' => $nombre,
+                'perfil_img' => $perfil,
+                'tipo_usuario' => $item->Tipo_Usuario
+            ];
+        });
+
+        return [
+            'muro_id' => $muro->ID,
+            'titulo' => $muro->Titulo,
+            'docente' => $muro->docente ? "{$muro->docente->Apellido}, {$muro->docente->Nombre}" : 'N/A',
+            'intervenciones' => $intervenciones
+        ];
+    }
+
+    /**
+     * Marcar todos los mensajes sin leer del docente como leídos por el alumno.
+     *
+     * @param int $wallId ID del muro
+     * @param int $studentId ID del alumno
+     */
+    private function markWallAsRead($wallId, $studentId)
+    {
+        $now = Carbon::now();
+        
+        // Obtener IDs de mensajes del docente no leídos por el alumno
+        $unreadIds = DB::table('tareas_materia_muro_detalle as d')
+            ->leftJoin('tareas_materia_muro_lecturas as l', function($join) use ($studentId) {
+                $join->on('d.ID', '=', 'l.ID_Muro_Detalle')
+                     ->where('l.ID_Alumno', '=', (int)$studentId);
+            })
+            ->where('d.ID_Muro', $wallId)
+            ->where('d.Tipo_Usuario', 'D')
+            ->where('d.B', 0)
+            ->whereNull('l.ID')
+            ->pluck('d.ID');
+
+        // Registrar la lectura para cada mensaje no leído
+        foreach ($unreadIds as $id) {
+            MuroLectura::create([
+                'ID_Alumno' => $studentId,
+                'ID_Muro_Detalle' => $id,
+                'Fecha_Leido' => $now->format('Y-m-d'),
+                'Hora_Leido' => $now->format('H:i:s')
+            ]);
+        }
+    }
+
+    /**
+     * Guardar una nueva intervención del alumno en el muro.
+     *
+     * @param int $wallId ID del muro
+     * @param int $studentId ID del alumno
+     * @param string $message Contenido del mensaje
+     * @return MuroDetalle El detalle creado
+     */
+    public function storeIntervention($wallId, $studentId, $message)
+    {
+        return MuroDetalle::create([
+            'ID_Muro' => $wallId,
+            'ID_Usuario' => $studentId,
+            'Tipo_Usuario' => 'A',
+            'Fecha' => Carbon::now()->format('Y-m-d'),
+            'Hora' => Carbon::now()->format('H:i:s'),
+            'Mensaje' => $message,
+            'B' => 0
+        ]);
     }
 }

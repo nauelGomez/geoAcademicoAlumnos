@@ -15,13 +15,17 @@ class ReportController extends BaseInstitutionController
         $this->repo = $repo;
     }
 
-    public function index(Request $request, $studentId)
+    /**
+     * Listado de informes pedagógicos para el alumno.
+     *
+     * @param int $studentId
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function index($studentId)
     {
         try {
-            // El email se podría obtener del usuario autenticado, aquí lo simulamos
-            $familyEmail = $request->header('X-Family-Email', ''); 
-            $data = $this->repo->getStudentReports($studentId, $familyEmail);
-            
+            $data = $this->repo->getReports($studentId);
+
             return response()->json([
                 'success' => true,
                 'data' => $data
@@ -29,7 +33,7 @@ class ReportController extends BaseInstitutionController
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error al cargar informes pedagógicos',
+                'message' => 'Error al cargar los informes pedagógicos.',
                 'debug' => $e->getMessage()
             ], 500);
         }
