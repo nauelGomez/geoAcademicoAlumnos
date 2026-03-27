@@ -15,10 +15,13 @@ class FamilyAulaController extends BaseInstitutionController
         $this->repo = $repo;
     }
 
-    public function index($studentId)
+    public function index(Request $request, $studentId)
     {
         try {
-            $data = $this->repo->getAulasDisponibles($studentId);
+            // Agarramos el ciclo del request, o por defecto usamos el año actual
+            $cicloLectivo = $request->query('ciclo', date('Y')); 
+
+            $data = $this->repo->getAulasDisponibles($studentId, $cicloLectivo);
 
             return response()->json([
                 'success' => true,
@@ -33,10 +36,11 @@ class FamilyAulaController extends BaseInstitutionController
         }
     }
 
-    public function show($studentId, $materiaId, $tipoMateria)
+    public function show(Request $request, $studentId, $materiaId, $tipoMateria)
     {
         try {
-            $data = $this->repo->getDetalleAula($studentId, $materiaId, $tipoMateria);
+            $cicloLectivo = $request->query('ciclo', date('Y'));
+            $data = $this->repo->getDetalleAula($studentId, $materiaId, $tipoMateria, $cicloLectivo);
 
             return response()->json([
                 'success' => true,
@@ -51,10 +55,11 @@ class FamilyAulaController extends BaseInstitutionController
         }
     }
 
-    public function tareas($studentId, $materiaId, $tipoMateria)
+    public function tareas(Request $request, $studentId, $materiaId, $tipoMateria)
     {
         try {
-            $data = $this->repo->getTareasGenerales($studentId, $materiaId, $tipoMateria);
+            $cicloLectivo = $request->query('ciclo', date('Y'));
+            $data = $this->repo->getTareasGenerales($studentId, $materiaId, $tipoMateria, $cicloLectivo);
 
             return response()->json([
                 'success' => true,
@@ -69,10 +74,11 @@ class FamilyAulaController extends BaseInstitutionController
         }
     }
 
-    public function recursos($studentId, $materiaId, $tipoMateria)
+    public function recursos(Request $request, $studentId, $materiaId, $tipoMateria)
     {
         try {
-            $data = $this->repo->getRecursosGenerales($studentId, $materiaId, $tipoMateria);
+            $cicloLectivo = $request->query('ciclo', date('Y'));
+            $data = $this->repo->getRecursosGenerales($studentId, $materiaId, $tipoMateria, $cicloLectivo);
 
             return response()->json([
                 'success' => true,
