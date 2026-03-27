@@ -5,7 +5,21 @@ use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
-| Importación de Controladores (Habilita Ctrl+Click en el IDE)
+| Helper para IDE (Ctrl+Click) compatible con Laravel 5.5
+|--------------------------------------------------------------------------
+| Este helper engaña al IDE para que reconozca el array como un callable
+| (habilitando el Ctrl+Click en el método), pero le entrega a Laravel 5.5
+| el string exacto que necesita para que `php artisan route:cache` no se rompa.
+*/
+if (!function_exists('ide_route')) {
+    function ide_route(array $callable) {
+        return '\\' . $callable[0] . '@' . $callable[1];
+    }
+}
+
+/*
+|--------------------------------------------------------------------------
+| Importación de Controladores
 |--------------------------------------------------------------------------
 */
 
@@ -57,14 +71,14 @@ Route::get('/hello', function () {
     return response()->json([
         'message' => 'Hello World',
         'status'  => 'success',
-        'project' => 'geoAcademicoAlumnos',
+        'project' => 'geoAcademicoAlumnos'
     ]);
 });
 
 // Estas rutas consultan la DB Master para listar los colegios
 Route::prefix('institutions')->group(function () {
-    Route::get('/', [InstitutionController::class, 'index']);
-    Route::get('/{institutionId}', [InstitutionController::class, 'show']);
+    Route::get('/', ide_route([InstitutionController::class, 'index']));
+    Route::get('/{institutionId}', ide_route([InstitutionController::class, 'show']));
 });
 
 /*
@@ -76,95 +90,95 @@ Route::middleware(['tenant'])->group(function () {
 
     // --- Alumnos ---
     Route::prefix('alumnos')->group(function () {
-        Route::get('/', [AlumnoController::class, 'index']);
-        Route::get('/{studentId}', [AlumnoController::class, 'show']);
+        Route::get('/', ide_route([AlumnoController::class, 'index']));
+        Route::get('/{studentId}', ide_route([AlumnoController::class, 'show']));
     });
 
     // --- Tareas / Tasks ---
     Route::prefix('tasks')->group(function () {
-        Route::get('/', [TaskController::class, 'index']);
-        Route::get('/stats', [TaskController::class, 'getTaskStats']);
-        Route::get('/{taskId}', [TaskController::class, 'show']);
-        Route::get('/student/{studentId}', [TaskController::class, 'studentTasks']);
-        Route::post('/resolution', [TaskController::class, 'submitResolution']);
+        Route::get('/', ide_route([TaskController::class, 'index']));
+        Route::get('/stats', ide_route([TaskController::class, 'getTaskStats']));
+        Route::get('/{taskId}', ide_route([TaskController::class, 'show']));
+        Route::get('/student/{studentId}', ide_route([TaskController::class, 'studentTasks']));
+        Route::post('/resolution', ide_route([TaskController::class, 'submitResolution']));
     });
 
     // --- Calificaciones / Grades ---
     Route::prefix('grades')->group(function () {
-        Route::get('/student/{studentId}', [GradeController::class, 'studentGrades']);
-        Route::get('/student/{studentId}/summary', [GradeController::class, 'gradesSummary']);
-
+        Route::get('/student/{studentId}', ide_route([GradeController::class, 'studentGrades']));
+        Route::get('/student/{studentId}/summary', ide_route([GradeController::class, 'gradesSummary']));
+        
         // --- Course Grades ---
-        Route::get('/course/student/{studentId}', [CourseGradeController::class, 'studentGrades']);
+        Route::get('/course/student/{studentId}', ide_route([CourseGradeController::class, 'studentGrades']));
     });
 
     // --- Noticias / News ---
     Route::prefix('news')->group(function () {
-        Route::get('/student/{studentId}', [NewsController::class, 'studentNews']);
-        Route::get('/student/{studentId}/summary', [NewsController::class, 'newsSummary']);
-        Route::post('/student/{studentId}/{newsId}/read', [NewsController::class, 'markAsRead']);
+        Route::get('/student/{studentId}', ide_route([NewsController::class, 'studentNews']));
+        Route::get('/student/{studentId}/summary', ide_route([NewsController::class, 'newsSummary']));
+        Route::post('/student/{studentId}/{newsId}/read', ide_route([NewsController::class, 'markAsRead']));
     });
 
     // --- Asistencia / Attendance ---
     Route::prefix('attendance')->group(function () {
-        Route::get('/student/{studentId}/summary', [AttendanceController::class, 'summary']);
-        Route::get('/student/{studentId}/subjects', [AttendanceController::class, 'subjectsAttendance']);
-        Route::get('/student/{studentId}/subject/{subjectId}', [AttendanceController::class, 'subjectDetail']);
+        Route::get('/student/{studentId}/summary', ide_route([AttendanceController::class, 'summary']));
+        Route::get('/student/{studentId}/subjects', ide_route([AttendanceController::class, 'subjectsAttendance']));
+        Route::get('/student/{studentId}/subject/{subjectId}', ide_route([AttendanceController::class, 'subjectDetail']));
     });
 
     // --- Inscripciones / Enrollments ---
     Route::prefix('inscripciones')->group(function () {
-        Route::get('/disponibles', [InscripcionController::class, 'disponibles']);
-        Route::post('/inscribir', [InscripcionController::class, 'inscribir']);
-        Route::post('/baja', [InscripcionController::class, 'darDeBaja']);
+        Route::get('/disponibles', ide_route([InscripcionController::class, 'disponibles']));
+        Route::post('/inscribir', ide_route([InscripcionController::class, 'inscribir']));
+        Route::post('/baja', ide_route([InscripcionController::class, 'darDeBaja']));
     });
 
     // --- Dashboard ---
     Route::prefix('dashboard')->group(function () {
-        Route::get('/', [DashboardController::class, 'getStudentDashboard']);
+        Route::get('/', ide_route([DashboardController::class, 'getStudentDashboard']));
     });
 
     // --- Documentación / Documentation ---
     Route::prefix('documentation')->group(function () {
-        Route::get('/student/{studentId}', [DocumentationController::class, 'studentDocumentation']);
+        Route::get('/student/{studentId}', ide_route([DocumentationController::class, 'studentDocumentation']));
     });
 
-    // --- Módulo de Test Virtuales ---
+    // Módulo de Test Virtuales
     Route::prefix('virtual-tests')->group(function () {
-        Route::get('/student/{studentId}', [VirtualTestController::class, 'index']);
-        Route::get('/{testId}/student/{studentId}', [VirtualTestController::class, 'show']);
+        Route::get('/student/{studentId}', ide_route([VirtualTestController::class, 'index']));
+        Route::get('/{testId}/student/{studentId}', ide_route([VirtualTestController::class, 'show']));
     });
 
     Route::prefix('correlativities')->group(function () {
-        Route::get('/student/{studentId}', [CorrelativityController::class, 'index']);
+        Route::get('/student/{studentId}', ide_route([CorrelativityController::class, 'index']));
     });
 
     Route::prefix('exam-sessions')->group(function () {
-        Route::get('/student/{studentId}', [ExamSessionController::class, 'index']);
+        Route::get('/student/{studentId}', ide_route([ExamSessionController::class, 'index']));
     });
 
     Route::prefix('certificates')->group(function () {
-        Route::get('/student/{studentId}', [CertificateController::class, 'index']);
-        Route::get('/student/{studentId}/create', [CertificateController::class, 'create']);
-        Route::post('/student/{studentId}', [CertificateController::class, 'store']);
+        Route::get('/student/{studentId}', ide_route([CertificateController::class, 'index']));
+        Route::get('/student/{studentId}/create', ide_route([CertificateController::class, 'create']));
+        Route::post('/student/{studentId}', ide_route([CertificateController::class, 'store']));
     });
 
     Route::prefix('posts')->group(function () {
-        Route::get('/student/{studentId}', [PostController::class, 'index']);
-        Route::get('/{postId}/student/{studentId}', [PostController::class, 'show']);
-        Route::post('/{postId}/student/{studentId}/read', [PostController::class, 'markAsRead']);
+        Route::get('/student/{studentId}', ide_route([PostController::class, 'index']));
+        Route::get('/{postId}/student/{studentId}', ide_route([PostController::class, 'show']));
+        Route::post('/{postId}/student/{studentId}/read', ide_route([PostController::class, 'markAsRead']));
     });
 
     Route::prefix('profile')->group(function () {
-        Route::get('/student/{studentId}', [ProfileController::class, 'show']);
-        Route::put('/student/{studentId}', [ProfileController::class, 'update']);
+        Route::get('/student/{studentId}', ide_route([ProfileController::class, 'show']));
+        Route::put('/student/{studentId}', ide_route([ProfileController::class, 'update']));
     });
 
     Route::prefix('messages')->group(function () {
-        Route::get('/student/{studentId}/recipients', [MessageController::class, 'create']);
-        Route::get('/student/{studentId}/chat/{codigo}', [MessageController::class, 'show']);
-        Route::post('/student/{studentId}', [MessageController::class, 'store']);
-        Route::post('/student/{studentId}/chat/{codigo}', [MessageController::class, 'reply']);
+        Route::get('/student/{studentId}/recipients', ide_route([MessageController::class, 'create']));
+        Route::get('/student/{studentId}/chat/{codigo}', ide_route([MessageController::class, 'show']));
+        Route::post('/student/{studentId}', ide_route([MessageController::class, 'store']));
+        Route::post('/student/{studentId}/chat/{codigo}', ide_route([MessageController::class, 'reply']));
     });
 
     /*
@@ -173,72 +187,68 @@ Route::middleware(['tenant'])->group(function () {
     |--------------------------------------------------------------------------
     */
     Route::prefix('app-familias')->group(function () {
-
-        Route::get('/linked-students', [FamilyStudentController::class, 'index']);
-        Route::get('/dashboard/student/{studentId}', [FamilyDashboardController::class, 'show']);
-        Route::get('/agenda/student/{studentId}', [AgendaController::class, 'index']);
-        Route::get('/intensification/student/{studentId}', [IntensificationController::class, 'index']);
-
+        
+        Route::get('/linked-students', ide_route([FamilyStudentController::class, 'index']));
+        Route::get('/dashboard/student/{studentId}', ide_route([FamilyDashboardController::class, 'show']));
+        Route::get('/agenda/student/{studentId}', ide_route([AgendaController::class, 'index']));
+        Route::get('/intensification/student/{studentId}', ide_route([IntensificationController::class, 'index']));
+        
         // MUROS DE NOVEDADES
-        Route::get('/walls/student/{studentId}', [FamilyWallController::class, 'index']);
-        Route::get('/walls/{wallId}/student/{studentId}', [FamilyWallController::class, 'show']);
-        Route::post('/walls/{wallId}/student/{studentId}/intervenir', [FamilyWallController::class, 'storeIntervention']);
+        Route::get('/walls/student/{studentId}', ide_route([FamilyWallController::class, 'index']));
+        Route::get('/walls/{wallId}/student/{studentId}', ide_route([FamilyWallController::class, 'show']));
+        Route::post('/walls/{wallId}/student/{studentId}/intervenir', ide_route([FamilyWallController::class, 'storeIntervention']));
 
         // LIBRO DE CALIFICACIONES
-        Route::get('/grades/student/{studentId}', [FamilyGradeController::class, 'index']);
+        Route::get('/grades/student/{studentId}', ide_route([FamilyGradeController::class, 'index']));
 
         // DETALLE DE INASISTENCIAS
-        Route::get('/attendance/student/{studentId}', [FamilyAttendanceController::class, 'index']);
+        Route::get('/attendance/student/{studentId}', ide_route([FamilyAttendanceController::class, 'index']));
 
         // INFORMES PEDAGÓGICOS
-        Route::get('/reports/student/{studentId}', [ReportController::class, 'index']);
+        Route::get('/reports/student/{studentId}', ide_route([ReportController::class, 'index']));
 
         // COMUNICADOS / POSTS
-        Route::get('/posts/student/{studentId}', [FamilyPostController::class, 'index']);
-        Route::get('/posts/{postId}/student/{studentId}', [FamilyPostController::class, 'show']);
+        Route::get('/posts/student/{studentId}', ide_route([FamilyPostController::class, 'index']));
+        Route::get('/posts/{postId}/student/{studentId}', ide_route([FamilyPostController::class, 'show']));
 
         // COMUNICACIONES
-        Route::get('/announcements/student/{studentId}', [AnnouncementController::class, 'index']);
-        Route::get('/announcements/{tipo}/{code}/student/{studentId}', [AnnouncementController::class, 'show']);
+        Route::get('/announcements/student/{studentId}', ide_route([AnnouncementController::class, 'index']));
+        Route::get('/announcements/{tipo}/{code}/student/{studentId}', ide_route([AnnouncementController::class, 'show']));
 
         // AUTORIZACIONES DE RETIRO
-        Route::get('/authorizations/student/{studentId}', [AuthorizationController::class, 'index']);
-        Route::post('/authorizations/person/student/{studentId}', [AuthorizationController::class, 'storePerson']);
-        Route::delete('/authorizations/person/{id}', [AuthorizationController::class, 'destroyPerson']);
-        Route::post('/authorizations/notice/student/{studentId}', [AuthorizationController::class, 'storeNotice']);
-        Route::delete('/authorizations/notice/{id}', [AuthorizationController::class, 'destroyNotice']);
+        Route::get('/authorizations/student/{studentId}', ide_route([AuthorizationController::class, 'index']));
+        Route::post('/authorizations/person/student/{studentId}', ide_route([AuthorizationController::class, 'storePerson']));
+        Route::delete('/authorizations/person/{id}', ide_route([AuthorizationController::class, 'destroyPerson']));
+        Route::post('/authorizations/notice/student/{studentId}', ide_route([AuthorizationController::class, 'storeNotice']));
+        Route::delete('/authorizations/notice/{id}', ide_route([AuthorizationController::class, 'destroyNotice']));
 
         // MESAS DE EXAMEN
-        Route::get('/exam-boards/student/{studentId}', [ExamBoardController::class, 'index']);
-
-        // // AUTO-INSCRIPCIONES A MATERIAS GRUPALES
-        // Route::get('/enrollments/student/{studentId}', [EnrollmentController::class, 'index']);
-        // Route::post('/enrollments/student/{studentId}', [EnrollmentController::class, 'store']);
-
-        // AULAS VIRTUALES (Nivel Secundario y Superior)
-        Route::get('/students/{studentId}/aulas', [FamilyAulaController::class, 'index']);
-        Route::get('/students/{studentId}/aulas/{materiaId}/tipo/{tipoMateria}', [FamilyAulaController::class, 'show']);
-        Route::get('/students/{studentId}/aulas/{materiaId}/tipo/{tipoMateria}/tareas', [FamilyAulaController::class, 'tareas']);
-        Route::get('/students/{studentId}/aulas/{materiaId}/tipo/{tipoMateria}/recursos', [FamilyAulaController::class, 'recursos']);
+        Route::get('/exam-boards/student/{studentId}', ide_route([ExamBoardController::class, 'index']));
+        
+        // AULAS VIRTUALES
+        Route::get('/students/{studentId}/aulas', ide_route([FamilyAulaController::class, 'index']));
+        Route::get('/students/{studentId}/aulas/{materiaId}/tipo/{tipoMateria}', ide_route([FamilyAulaController::class, 'show']));
+        Route::get('/students/{studentId}/aulas/{materiaId}/tipo/{tipoMateria}/tareas', ide_route([FamilyAulaController::class, 'tareas']));
+        Route::get('/students/{studentId}/aulas/{materiaId}/tipo/{tipoMateria}/recursos', ide_route([FamilyAulaController::class, 'recursos']));
 
         // TAREAS VIRTUALES
         Route::prefix('v1/families')->group(function () {
-            Route::get('/students/{studentId}/tasks', [FamilyTaskController::class, 'index']);
-            Route::get('/students/{studentId}/tasks/{taskId}', [FamilyTaskController::class, 'show']);
-            Route::post('/students/{studentId}/tasks/{taskId}/resolutions', [FamilyTaskController::class, 'storeResolution']);
-            Route::post('/students/{studentId}/tasks/{taskId}/queries', [FamilyTaskController::class, 'storeQuery']);
-            Route::get('/students/{studentId}/aulas-superior', [FamilyAulaController::class, 'index']);
+            Route::get('students/{studentId}/tasks', ide_route([FamilyTaskController::class, 'index']));
+            Route::get('students/{studentId}/tasks/{taskId}', ide_route([FamilyTaskController::class, 'show']));
+            Route::post('students/{studentId}/tasks/{taskId}/resolutions', ide_route([FamilyTaskController::class, 'storeResolution']));
+            Route::post('students/{studentId}/tasks/{taskId}/queries', ide_route([FamilyTaskController::class, 'storeQuery']));
+            Route::get('students/{studentId}/aulas-superior', ide_route([FamilyAulaController::class, 'index']));
         });
 
         // PERFIL DEL ALUMNO
-        Route::get('/profile/student/{studentId}', [FamilyProfileController::class, 'show']);
-        Route::post('/profile/student/{studentId}/update', [FamilyProfileController::class, 'update']);
-        Route::post('/profile/student/{studentId}/photo', [FamilyProfileController::class, 'updatePhoto']);
+        Route::get('/profile/student/{studentId}', ide_route([FamilyProfileController::class, 'show']));
+        Route::post('/profile/student/{studentId}/update', ide_route([FamilyProfileController::class, 'update']));
+        Route::post('/profile/student/{studentId}/photo', ide_route([FamilyProfileController::class, 'updatePhoto']));
 
         // MENSAJERÍA BIDIRECCIONAL
-        Route::get('/messaging/student/{studentId}', [MessagingController::class, 'index']);
-        Route::get('/messaging/chat/{code}', [MessagingController::class, 'show']);
-        Route::get('/messaging/recipients/student/{studentId}', [MessagingController::class, 'recipients']);
-        Route::post('/messaging/send', [MessagingController::class, 'store']);
+        Route::get('/messaging/student/{studentId}', ide_route([MessagingController::class, 'index']));
+        Route::get('/messaging/chat/{code}', ide_route([MessagingController::class, 'show']));
+        Route::get('/messaging/recipients/student/{studentId}', ide_route([MessagingController::class, 'recipients']));
+        Route::post('/messaging/send', ide_route([MessagingController::class, 'store']));
     });
 });
