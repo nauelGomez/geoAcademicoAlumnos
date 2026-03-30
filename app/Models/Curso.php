@@ -16,4 +16,9 @@ class Curso extends Model
         // Al ser DB Legacy, forzamos las llaves: (ModeloDestino, foreign_key_local, owner_key_destino)
         return $this->belongsTo(Plan::class, 'ID_Plan', 'ID');
     }
+
+    public function nivelObj()
+    {
+        return $this->belongsTo(Nivel::class, 'ID_Nivel', 'ID');
+    }
 }

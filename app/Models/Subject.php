@@ -3,14 +3,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class SubjectPlan extends Model
+class Subject extends Model
 {
-    protected $table = 'materias_planes';
+    // Tabla legacy: materias
+    protected $table = 'materias';
     protected $primaryKey = 'ID';
-    public $timestamps = false; // No hay created_at en tu imagen
+    public $timestamps = false;
 
-    protected $fillable = [
-        'ID_Plan', 'Materia', 'Curso', 'Orden', 'Vencimiento',
-        'Por_As', 'Max_Inas', 'Ap_Cur', 'Ap_Fin', 'Ap_Prom'
-    ];
+    protected $fillable = ['Materia', 'ID_Curso', 'ID_Personal'];
 }

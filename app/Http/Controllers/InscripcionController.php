@@ -1,7 +1,8 @@
 <?php
+
 namespace App\Http\Controllers;
 
-use App\Http\Requests\GestionarInscripcionRequest; // <-- FIX del nombre del Request
+use App\Http\Requests\GestionarInscripcionRequest;
 use App\Repositories\InscripcionRepository;
 use Illuminate\Http\Request;
 use Exception;
@@ -16,57 +17,51 @@ class InscripcionController extends Controller
         $this->inscripcionRepo = $inscripcionRepo;
     }
 
-public function disponibles(Request $request)
-{
-    try {
-        $alumnoId = session('idal', $request->header('X-Alumno-ID')); 
-        $instId = $request->header('X-Institution-ID');
-
-        if (!$alumnoId) {
-            return response()->json(['success' => false, 'message' => 'Sesión de alumno no válida'], 401);
-        }
-
-        $repo = $this->inscripcionRepo;
-        $resultado = $repo->getMateriasDisponibles((int) $alumnoId);
-
-        if (isset($resultado['status']) && $resultado['status'] === 'error') {
-            return response()->json(['success' => false, 'message' => $resultado['message']], 400);
-        }
-
-        // --- RESPUESTA CON TELEMETRÍA DE INFRAESTRUCTURA ---
-        return response()->json([
-            'success' => true,
-            'php_version' => PHP_VERSION,          // ¿Estamos en 7.2 realmente?
-            'php_sapi' => php_sapi_name(),         // ¿FPM o CGI?
-            'laravel_version' => app()->version(), // ¿Logramos bajarlo a 7.x?
-            'data' => $resultado['data'],
-            'message' => 'Grupos disponibles obtenidos correctamente.'
-        ], 200);
-
-    } catch (Exception $e) {
-        Log::error('Error al obtener cursos disponibles: ' . $e->getMessage());
-        
-        return response()->json([
-            'success' => false, 
-            'message' => 'Error de código o SQL',
-            'debug_error' => $e->getMessage(),
-            'debug_line' => $e->getLine(),
-            'debug_file' => basename($e->getFile())
-        ], 500);
-    }
-}
-
-   public function inscribir(GestionarInscripcionRequest $request)
+    public function disponibles(Request $request)
     {
-        $alumnoId = session('idal', $request->header('X-Alumno-ID'));
-
         try {
-            if (!$alumnoId) {
-                return response()->json(['success' => false, 'message' => 'Sesión no válida'], 401);
+            $alumnoId = session('idal', $request->header('X-Alumno-ID')); 
+            $instId = $request->header('X-Institution-ID'); 
+
+            if (!$alumnoId || !$instId) {
+                return response()->json(['success' => false, 'message' => 'Sesión de alumno o institución no válida'], 401);
             }
 
-            // <-- FIX: Usamos inscripcionRepo como en el constructor
-            $this->inscripcionRepo->inscribir((int) $alumnoId, $request->id_materia_grupal);
+            $resultado = $this->inscripcionRepo->getMateriasDisponibles((int) $instId, (int) $alumnoId);
+
+            if (isset($resultado['status']) && $resultado['status'] === 'error') {
+                return response()->json(['success' => false, 'message' => $resultado['message']], 400);
+            }
+
+            // --- RESPUESTA CON EL NUEVO CAMPO ---
+            return response()->json([
+                'success' => true,
+                'data' => $resultado['data'],
+                'insc_disponibles' => $resultado['insc_disponibles'] ?? 0, // <-- ACÁ APARECE EN EL JSON FINAL
+                'message' => 'Grupos disponibles obtenidos correctamente.'
+            ], 200);
+
+        } catch (Exception $e) {
+            Log::error('Error al obtener cursos disponibles: ' . $e->getMessage());
+            
+            return response()->json([
+                'success' => false, 
+                'message' => 'Error de código o SQL',
+                'debug_error' => $e->getMessage()
+            ], 500);
+        }
+    }
+    public function inscribir(GestionarInscripcionRequest $request)
+    {
+        $alumnoId = session('idal', $request->header('X-Alumno-ID'));
+        $instId = $request->header('X-Institution-ID'); 
+
+        try {
+            if (!$alumnoId || !$instId) {
+                return response()->json(['success' => false, 'message' => 'Sesión de alumno o institución no válida'], 401);
+            }
+
+            $this->inscripcionRepo->inscribir((int) $instId, (int) $alumnoId, $request->id_materia_grupal);
 
             return response()->json([
                 'success' => true,
@@ -93,7 +88,6 @@ public function disponibles(Request $request)
                 return response()->json(['success' => false, 'message' => 'Sesión no válida'], 401);
             }
 
-            // <-- FIX: Usamos inscripcionRepo como en el constructor
             $this->inscripcionRepo->darDeBaja((int) $alumnoId, $request->id_materia_grupal);
 
             return response()->json([
