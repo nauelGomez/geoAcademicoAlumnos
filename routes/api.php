@@ -105,12 +105,20 @@ Route::middleware(['tenant'])->group(function () {
 
     // --- Calificaciones / Grades ---
     Route::prefix('grades')->group(function () {
-        Route::get('/student/{studentId}', ide_route([GradeController::class, 'studentGrades']));
-        Route::get('/student/{studentId}/summary', ide_route([GradeController::class, 'gradesSummary']));
+    // 1. PRIMERO las rutas estáticas
+    Route::get('/student/evolucion-cursada', ide_route([GradeController::class, 'evolucionCursada']));
+    
+    // 2. DESPUÉS las rutas dinámicas, restringiendo el ID para que solo acepte números
+    Route::get('/student/{studentId}', ide_route([GradeController::class, 'studentGrades']))
+        ->where('studentId', '[0-9]+'); // <-- Clave para que no se coma otras URLs
         
-        // --- Course Grades ---
-        Route::get('/course/student/{studentId}', ide_route([CourseGradeController::class, 'studentGrades']));
-    });
+    Route::get('/student/{studentId}/summary', ide_route([GradeController::class, 'gradesSummary']))
+        ->where('studentId', '[0-9]+');
+
+    // --- Course Grades ---
+    Route::get('/course/student/{studentId}', ide_route([CourseGradeController::class, 'studentGrades']))
+        ->where('studentId', '[0-9]+');
+}); 
 
     // --- Noticias / News ---
     Route::prefix('news')->group(function () {

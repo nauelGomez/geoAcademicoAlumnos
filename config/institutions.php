@@ -114,7 +114,7 @@ return [
         'port'     => env('DB_PORT_ELEVEN', '3306'),
         'database' => env('DB_DATABASE_ELEVEN', 'geodnl_palladio'),
         'username' => env('DB_USERNAME_ELEVEN', 'root'),
-        'password' => env('DB_PASSWORD_ELEVEN', '8695'),
+        'password' => env('DB_PASSWORD_ELEVEN', ''),
     ],
 
     18 => [
