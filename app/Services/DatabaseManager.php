@@ -24,9 +24,9 @@ class DatabaseManager
                 'driver' => 'mysql',
                 'host' => '127.0.0.1',
                 'port' => '3306',
-                'database' => 'dmendoza_pr_el_gral_familias',
+                'database' => 'dmendoza_pr_el_gral',
                 'username' => 'root',
-                'password' => '8695',
+                'password' => 'root',
                 'charset' => 'utf8',
                 'collation' => 'utf8_unicode_ci',
                 'prefix' => '',
@@ -34,7 +34,7 @@ class DatabaseManager
                 'strict' => false,
                 'engine' => null,
             ]);
-            
+
             // Use familias connection to get institution data
             $institution = DB::connection('familias')
                 ->table('instituciones')
@@ -59,14 +59,14 @@ class DatabaseManager
                 ])
                 ->where('ID', $institutionId)
                 ->first();
-            
+
             if (!$institution) {
                 throw new \Exception("Institution with ID {$institutionId} not found");
             }
-            
+
             self::$institutionCache[$institutionId] = $institution;
         }
-        
+
         return self::$institutionCache[$institutionId];
     }
 
@@ -77,7 +77,7 @@ class DatabaseManager
     {
         $institution = self::getInstitutionData($institutionId);
         $connectionName = "institution_{$institutionId}";
-        
+
         // Create new connection using exact same config as default mysql but different database
         Config::set("database.connections.{$connectionName}", [
             'driver' => 'mysql',
@@ -96,7 +96,7 @@ class DatabaseManager
             'engine' => null,
             'options' => [], // Remove PDO options that cause authentication issues
         ]);
-        
+
         return $connectionName;
     }
 
@@ -114,7 +114,7 @@ class DatabaseManager
     public static function connection($institutionId)
     {
         $institution = self::getInstitutionData($institutionId);
-        
+
         // Create direct PDO connection
         $pdo = new PDO(
             "mysql:host=127.0.0.1;port=3306;dbname={$institution->DB_Name};charset=utf8mb4",
@@ -126,25 +126,25 @@ class DatabaseManager
                 PDO::MYSQL_ATTR_SSL_VERIFY_SERVER_CERT => false,
             ]
         );
-        
+
         // Create a database connection wrapper
         return new class($pdo) {
             private $pdo;
-            
+
             public function __construct($pdo) {
                 $this->pdo = $pdo;
             }
-            
+
             public function table($tableName) {
                 return new class($this->pdo, $tableName) {
                     private $pdo;
                     private $tableName;
-                    
+
                     public function __construct($pdo, $tableName) {
                         $this->pdo = $pdo;
                         $this->tableName = $tableName;
                     }
-                    
+
                     public function where($column, $operator, $value = null) {
                         if ($value === null) {
                             $value = $operator;
@@ -155,7 +155,7 @@ class DatabaseManager
                         $stmt->execute([$value]);
                         return $stmt->fetch();
                     }
-                    
+
                     public function select($columns = ['*']) {
                         $columnList = is_array($columns) ? implode(', ', $columns) : $columns;
                         $query = "SELECT $columnList FROM {$this->tableName}";
@@ -163,7 +163,7 @@ class DatabaseManager
                         $stmt->execute();
                         return $stmt->fetchAll();
                     }
-                    
+
                     public function first() {
                         $query = "SELECT * FROM {$this->tableName} LIMIT 1";
                         $stmt = $this->pdo->prepare($query);

@@ -3,9 +3,11 @@
 namespace App\Http\Controllers\AppFamilias;
 
 use App\Http\Controllers\BaseInstitutionController;
+use App\Http\Requests\AppFamilias\ResolverTareaFamiliaRequest;
 use App\Repositories\AppFamilias\FamilyAulaRepository;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use RuntimeException;
 use Throwable;
 
 class FamilyAulaController extends BaseInstitutionController
@@ -206,6 +208,101 @@ class FamilyAulaController extends BaseInstitutionController
                 'success' => false,
                 'data' => null,
                 'message' => 'Error al cargar los recursos generales.',
+                'errors' => [$e->getMessage()],
+            ], 500);
+        }
+    }
+
+    public function detalleTarea(Request $request, $studentId, $materiaId, $tipoMateria, $taskId): JsonResponse
+    {
+        try {
+            $cicloLectivo = $request->query('ciclo');
+            $data = $this->repo->getDetalleTarea($studentId, $materiaId, $tipoMateria, $taskId, $cicloLectivo);
+
+            if (!$data) {
+                return response()->json([
+                    'success' => false,
+                    'data' => null,
+                    'message' => 'Tarea no encontrada.',
+                    'errors' => null,
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $data,
+                'message' => 'Detalle de tarea obtenido correctamente.',
+                'errors' => null,
+            ], 200);
+        } catch (RuntimeException $e) {
+            return response()->json([
+                'success' => false,
+                'data' => null,
+                'message' => $e->getMessage(),
+                'errors' => null,
+            ], 422);
+        } catch (\Throwable $e) {
+            \Log::error('Error FamilyAulaController@detalleTarea', [
+                'student_id' => (int) $studentId,
+                'materia_id' => (int) $materiaId,
+                'tipo_materia' => (string) $tipoMateria,
+                'task_id' => (int) $taskId,
+                'msg' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'data' => null,
+                'message' => 'Error al obtener el detalle de la tarea.',
+                'errors' => [$e->getMessage()],
+            ], 500);
+        }
+    }
+
+    public function resolverTarea(
+        ResolverTareaFamiliaRequest $request,
+        $studentId,
+        $materiaId,
+        $tipoMateria,
+        $taskId
+    ): JsonResponse {
+        try {
+            $data = $this->repo->guardarResolucionTarea(
+                (int) $studentId,
+                (int) $materiaId,
+                (string) $tipoMateria,
+                (int) $taskId,
+                $request->header('X-Institution-ID'),
+                $request->validated(),
+                $request->file('archivos', [])
+            );
+
+            return response()->json([
+                'success' => true,
+                'data' => $data,
+                'message' => 'Resolución guardada correctamente.',
+                'errors' => null,
+            ], 200);
+        } catch (RuntimeException $e) {
+            return response()->json([
+                'success' => false,
+                'data' => null,
+                'message' => $e->getMessage(),
+                'errors' => null,
+            ], 422);
+        } catch (\Throwable $e) {
+            \Log::error('Error FamilyAulaController@resolverTarea', [
+                'student_id' => (int) $studentId,
+                'materia_id' => (int) $materiaId,
+                'tipo_materia' => (string) $tipoMateria,
+                'task_id' => (int) $taskId,
+                'msg' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'data' => null,
+                'message' => 'Error al guardar la resolución de la tarea.',
                 'errors' => [$e->getMessage()],
             ], 500);
         }

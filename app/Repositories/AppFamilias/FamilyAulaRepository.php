@@ -2,12 +2,34 @@
 
 namespace App\Repositories\AppFamilias;
 
+use App\Services\DatabaseManager;
 use App\Models\Alumno;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use App\Models\Agrupacion;
+use App\Models\Grupo;
+use App\Models\TareaAdjunto;
+use App\Models\TareaDevolucionAdjunto;
+use App\Models\TareaEnvio;
+use App\Models\TareaResolucion;
+use App\Models\TaskSubmission;
+use App\Models\TareaVirtual;
+use App\Models\TareaResolucionAdjunto;
+use App\Models\TareaVirtualVencimiento;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class FamilyAulaRepository
 {
+    /**
+     * @var DatabaseManager
+     */
+    protected $DatabaseManager;
+    public function __construct(DatabaseManager $DatabaseManager)
+    {
+        $this->DatabaseManager = $DatabaseManager;
+    }
+
     public function getAulasDisponibles($studentId, $cicloLectivo = null)
     {
         $alumno = Alumno::find($studentId);
@@ -1056,5 +1078,444 @@ class FamilyAulaRepository
             ->all();
 
         return $recursos;
+    }
+
+    public function getDetalleTarea($studentId, $materiaId, $tipoMateria, $taskId, $cicloLectivo = null)
+    {
+        $alumno = Alumno::find($studentId);
+        if (!$alumno) {
+            return null;
+        }
+
+        $tipoMateria = strtolower(trim((string) $tipoMateria));
+        if (!in_array($tipoMateria, ['c', 'g'], true)) {
+            throw new \RuntimeException('Tipo de materia inválido.');
+        }
+
+        $ciclo = $this->resolveCicloAlumno($alumno, $cicloLectivo);
+        if (!$ciclo) {
+            return null;
+        }
+
+        $tarea = $this->findTareaAlumno($studentId, $materiaId, $tipoMateria, $taskId, (int) $ciclo->ID);
+        if (!$tarea) {
+            return null;
+        }
+
+        $now = Carbon::now('America/Argentina/Buenos_Aires');
+
+        TaskSubmission::where('ID_Tarea', $taskId)
+            ->where('ID_Destinatario', $studentId)
+            ->where('Leido', 0)
+            ->update([
+                'Leido' => 1,
+                'Fecha_Leido' => $now->format('Y-m-d'),
+                'Hora_Leido' => $now->format('H:i:s'),
+            ]);
+
+        $resolucion = TareaResolucion::where('ID_Tarea', $taskId)
+            ->where('ID_Alumno', $studentId)
+            ->first();
+
+        $adjuntosDocente = TareaAdjunto::where('ID_Tarea', $taskId)
+            ->orderBy('ID', 'asc')
+            ->get(['ID', 'Titulo', 'Archivo'])
+            ->map(function ($adj) {
+                return [
+                    'id' => (int) $adj->ID,
+                    'titulo' => (string) $adj->Titulo,
+                    'archivo' => (string) $adj->Archivo,
+                ];
+            })
+            ->values()
+            ->all();
+
+        $adjuntosAlumno = TareaResolucionAdjunto::where('ID_Tarea', $taskId)
+            ->where('ID_Alumno', $studentId)
+            ->orderBy('ID', 'asc')
+            ->get(['ID', 'Archivo', 'Fecha', 'Hora', 'Leido', 'Servidor'])
+            ->map(function ($adj) {
+                return [
+                    'id' => (int) $adj->ID,
+                    'archivo' => (string) $adj->Archivo,
+                    'fecha' => (string) $adj->Fecha,
+                    'hora' => (string) $adj->Hora,
+                    'leido' => (int) $adj->Leido,
+                    'servidor' => (int) $adj->Servidor,
+                ];
+            })
+            ->values()
+            ->all();
+
+        $adjuntosCorreccion = TareaDevolucionAdjunto::where('ID_Tarea', $taskId)
+            ->where('ID_Alumno', $studentId)
+            ->orderBy('ID', 'asc')
+            ->get(['ID', 'Archivo'])
+            ->map(function ($adj) {
+                return [
+                    'id' => (int) $adj->ID,
+                    'archivo' => (string) $adj->Archivo,
+                ];
+            })
+            ->values()
+            ->all();
+
+        $vencimiento = $this->resolveVencimientoTarea($alumno, $tarea, (int) $ciclo->ID);
+        $fechaVencimiento = $vencimiento['fecha'];
+        $horaVencimiento = $vencimiento['hora'];
+        $vencida = $this->isTareaVencida($fechaVencimiento, $horaVencimiento);
+
+        $estadoPublicacion = ((int) $tarea->Cerrada === 0)
+            ? (((int) $tarea->Envio === 1) ? 'Publicada' : 'En producción')
+            : 'Oculta (Cerrada)';
+
+        return [
+            'id_tarea' => (int) $tarea->ID,
+            'id_materia' => (int) $tarea->ID_Materia,
+            'tipo_materia' => strtoupper((string) $tarea->Tipo_Materia),
+            'id_clase' => (int) $tarea->ID_Clase,
+            'tipo_id' => (int) $tarea->Tipo,
+            'tipo_tarea' => 'Tarea',
+            'titulo' => (string) $tarea->Titulo,
+            'consigna' => (string) $tarea->Consigna,
+            'estado' => $estadoPublicacion,
+            'fecha' => !empty($tarea->Fecha) ? Carbon::parse($tarea->Fecha)->format('Y-m-d') : null,
+            'fecha_publicacion' => (!empty($tarea->Fecha_Publicacion) && $tarea->Fecha_Publicacion !== '0000-00-00')
+                ? Carbon::parse($tarea->Fecha_Publicacion)->format('Y-m-d')
+                : null,
+            'hora_publicacion' => (string) ($tarea->Hora_Publicacion ?? ''),
+            'fecha_vencimiento' => $fechaVencimiento,
+            'hora_vencimiento' => $horaVencimiento,
+            'cerrada' => (int) $tarea->Cerrada,
+            'envio' => (int) $tarea->Envio,
+            'dest_sel' => (int) ($tarea->Dest_Sel ?? 0),
+            'leido' => (bool) ($tarea->Leido_Envio ?? 0),
+            'resuelto' => (bool) ($tarea->Resuelto_Envio ?? 0),
+            'corregido' => (bool) ($tarea->Corregido_Envio ?? 0),
+            'vencida' => $vencida ? 1 : 0,
+            'puede_entregar' => (((int) $tarea->Cerrada === 0) && !$vencida) ? 1 : 0,
+            'adjuntos_docente' => $adjuntosDocente,
+            'resolucion_alumno' => $resolucion ? [
+                'id' => (int) $resolucion->ID,
+                'resolucion' => (string) ($resolucion->Resolucion ?? ''),
+                'fecha' => (string) ($resolucion->Fecha ?? ''),
+                'hora' => (string) ($resolucion->Hora ?? ''),
+                'leido' => (int) ($resolucion->Leido ?? 0),
+                'correcion' => (int) ($resolucion->Correcion ?? 0),
+                'comentario_correccion' => (string) ($resolucion->Comentario_Correccion ?? ''),
+                'fecha_correccion' => (string) ($resolucion->Fecha_Correccion ?? ''),
+                'hora_correccion' => (string) ($resolucion->Hora_Correccion ?? ''),
+            ] : null,
+            'adjuntos_alumno' => $adjuntosAlumno,
+            'adjuntos_correccion' => $adjuntosCorreccion,
+            'estado_resolucion' => $resolucion
+                ? (((int) ($resolucion->Correcion ?? 0) === 1) ? 'Evaluado' : 'Entregado')
+                : 'Pendiente',
+        ];
+    }
+
+    public function guardarResolucionTarea($studentId, $materiaId, $tipoMateria, $taskId, $institucionId, array $payload, array $archivos = [])
+    {
+        $alumno = Alumno::find($studentId);
+        if (!$alumno) {
+            throw new \RuntimeException('El alumno indicado no existe.');
+        }
+
+        $tipoMateria = strtolower(trim((string) $tipoMateria));
+        if (!in_array($tipoMateria, ['c', 'g'], true)) {
+            throw new \RuntimeException('Tipo de materia inválido.');
+        }
+
+        $ciclo = $this->resolveCicloAlumno($alumno, null);
+        if (!$ciclo) {
+            throw new \RuntimeException('No se encontró ciclo lectivo para el alumno.');
+        }
+
+        $tarea = $this->findTareaAlumno($studentId, $materiaId, $tipoMateria, $taskId, (int) $ciclo->ID);
+        if (!$tarea) {
+            throw new \RuntimeException('La tarea no existe o no pertenece al alumno.');
+        }
+
+        if ((int) $tarea->Tipo !== 1) {
+            throw new \RuntimeException('La actividad indicada no es una tarea.');
+        }
+
+        if ((int) $tarea->Cerrada === 1) {
+            throw new \RuntimeException('La tarea está cerrada y no admite entregas.');
+        }
+
+        $vencimiento = $this->resolveVencimientoTarea($alumno, $tarea, (int) $ciclo->ID);
+        if ($this->isTareaVencida($vencimiento['fecha'], $vencimiento['hora'])) {
+            throw new \RuntimeException('La tarea está vencida y no admite entregas.');
+        }
+
+        $textoResolucion = trim((string) ($payload['resolucion'] ?? ''));
+        $now = Carbon::now('America/Argentina/Buenos_Aires');
+
+        DB::beginTransaction();
+
+        try {
+            $res = TareaResolucion::where('ID_Tarea', $taskId)
+                ->where('ID_Alumno', $studentId)
+                ->first();
+
+            if (!$res) {
+                $res = new TareaResolucion();
+                $res->ID_Tarea = (int) $taskId;
+                $res->ID_Alumno = (int) $studentId;
+            }
+
+            $res->Resolucion = $textoResolucion;
+            $res->Fecha = $now->format('Y-m-d');
+            $res->Hora = $now->format('H:i:s');
+            $res->Leido = 0;
+            $res->Fecha_Leido = '0000-00-00';
+            $res->Hora_Leido = '00:00:00';
+            $res->Correcion = 0;
+            $res->Comentario_Correccion = '';
+            $res->Fecha_Correccion = '0000-00-00';
+            $res->Hora_Correccion = '00:00:00';
+            $res->save();
+
+            $updatedEnvios = TareaEnvio::where('ID_Tarea', $taskId)
+                ->where('ID_Destinatario', $studentId)
+                ->update([
+                    'Resuelto' => 1,
+                    'Leido' => 1,
+                    'Fecha_Leido' => $now->format('Y-m-d'),
+                    'Hora_Leido' => $now->format('H:i:s'),
+                ]);
+
+            if ((int) $updatedEnvios === 0) {
+                TareaEnvio::create([
+                    'ID_Tarea' => (int) $taskId,
+                    'ID_Destinatario' => (int) $studentId,
+                    'Aleatorio' => '',
+                    'Envio' => 1,
+                    'Leido' => 1,
+                    'Fecha_Leido' => $now->format('Y-m-d'),
+                    'Hora_Leido' => $now->format('H:i:s'),
+                    'IP_Leido' => '',
+                    'MailD' => '',
+                    'Resuelto' => 1,
+                    'Corregido' => 0,
+                ]);
+            }
+
+            $adjuntosInsertados = 0;
+            $nombresAdjuntos = [];
+
+            if (!empty($archivos)) {
+                $institucion = DatabaseManager::getInstitutionData((int) $institucionId);
+                $carpeta = $institucion->Carpeta ?? null;
+
+                if (!$carpeta) {
+                    throw new \RuntimeException('No se pudo determinar la carpeta institucional para guardar adjuntos.');
+                }
+
+                $ruta = (string) config('app.ruta_tareas');
+                $ruta = str_replace('{carpeta}', $carpeta, $ruta);
+                $ruta = rtrim($ruta, "\\/");
+
+                if (!file_exists($ruta)) {
+                    @mkdir($ruta, 0755, true);
+                }
+
+                if (!file_exists($ruta)) {
+                    throw new \RuntimeException('No se pudo crear la carpeta destino para adjuntos.');
+                }
+
+                foreach ($archivos as $file) {
+                    if (!$file || !method_exists($file, 'isValid') || !$file->isValid()) {
+                        continue;
+                    }
+
+                    $nombreOriginal = (string) $file->getClientOriginalName();
+                    $ext = strtolower(pathinfo($nombreOriginal, PATHINFO_EXTENSION));
+
+                    if (!in_array($ext, ['png', 'jpg', 'jpeg', 'webp', 'doc', 'docx', 'xls', 'xlsx', 'pdf', 'ppt', 'pptx', 'mp3', 'mp4', 'mov', 'zip'], true)) {
+                        throw new \RuntimeException('Formato de archivo no permitido: ' . $ext);
+                    }
+
+                    $nombreFinal = $this->buildSafeFileName($nombreOriginal);
+                    $file->move($ruta, $nombreFinal);
+
+                    $adj = new TareaResolucionAdjunto();
+                    $adj->ID_Tarea = (int) $taskId;
+                    $adj->ID_Alumno = (int) $studentId;
+                    $adj->Archivo = $nombreFinal;
+                    $adj->Fecha = $now->format('Y-m-d');
+                    $adj->Hora = $now->format('H:i:s');
+                    $adj->Leido = 0;
+                    $adj->Servidor = 0;
+                    $adj->save();
+
+                    $adjuntosInsertados++;
+                    $nombresAdjuntos[] = $nombreFinal;
+                }
+            }
+
+            DB::commit();
+
+            return [
+                'id_tarea' => (int) $taskId,
+                'id_alumno' => (int) $studentId,
+                'id_resolucion' => (int) $res->ID,
+                'resuelto' => 1,
+                'corregido' => 0,
+                'estado_resolucion' => 'Entregado',
+                'fecha' => $now->format('Y-m-d'),
+                'hora' => $now->format('H:i:s'),
+                'adjuntos_insertados' => (int) $adjuntosInsertados,
+                'adjuntos' => $nombresAdjuntos,
+            ];
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            Log::error('Error guardarResolucionTarea', [
+                'student_id' => (int) $studentId,
+                'materia_id' => (int) $materiaId,
+                'tipo_materia' => (string) $tipoMateria,
+                'task_id' => (int) $taskId,
+                'msg' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
+    }
+
+    private function resolveCicloAlumno($alumno, $cicloLectivo = null)
+    {
+        $cicloQuery = DB::table('ciclo_lectivo')
+            ->where('ID_Nivel', $alumno->ID_Nivel);
+
+        if (!empty($cicloLectivo)) {
+            $ciclo = (clone $cicloQuery)
+                ->where('Ciclo_lectivo', (int) $cicloLectivo)
+                ->first();
+        } else {
+            $ciclo = null;
+        }
+
+        if (!$ciclo) {
+            $ciclo = (clone $cicloQuery)
+                ->where('Vigente', 'SI')
+                ->orderByDesc('ID')
+                ->first();
+        }
+
+        if (!$ciclo) {
+            $ciclo = (clone $cicloQuery)
+                ->orderByDesc('ID')
+                ->first();
+        }
+
+        return $ciclo;
+    }
+
+    private function findTareaAlumno($studentId, $materiaId, $tipoMateria, $taskId, $cicloId)
+    {
+        $hoy = Carbon::now('America/Argentina/Buenos_Aires')->format('Y-m-d');
+
+        return DB::table('tareas_virtuales as tv')
+            ->join('tareas_envios as te', function ($join) use ($studentId) {
+                $join->on('te.ID_Tarea', '=', 'tv.ID')
+                    ->where('te.ID_Destinatario', '=', $studentId);
+            })
+            ->where('tv.ID', $taskId)
+            ->where('tv.ID_Materia', $materiaId)
+            ->where('tv.Tipo_Materia', $tipoMateria)
+            ->where('tv.ID_Ciclo_Lectivo', $cicloId)
+            ->where('tv.Tipo', 1)
+            ->where(function ($q) use ($hoy) {
+                $q->whereNull('tv.Fecha_Publicacion')
+                    ->orWhere('tv.Fecha_Publicacion', '0000-00-00')
+                    ->orWhere('tv.Fecha_Publicacion', '<=', $hoy);
+            })
+            ->select(
+                'tv.*',
+                'te.Leido as Leido_Envio',
+                'te.Resuelto as Resuelto_Envio',
+                'te.Corregido as Corregido_Envio'
+            )
+            ->first();
+    }
+
+    private function resolveVencimientoTarea($alumno, $tarea, $cicloId)
+    {
+        $fecha = (!empty($tarea->Fecha_Vencimiento) && $tarea->Fecha_Vencimiento !== '0000-00-00')
+            ? Carbon::parse($tarea->Fecha_Vencimiento)->format('Y-m-d')
+            : null;
+
+        $hora = !empty($tarea->Hora_Vencimiento) ? (string) $tarea->Hora_Vencimiento : null;
+
+        if (!Schema::hasTable('tareas_virtuales_vencimientos')) {
+            return ['fecha' => $fecha, 'hora' => $hora];
+        }
+
+        $idAgrupacion = $this->resolveAgrupacionAlumno($alumno, $cicloId);
+
+        if ($idAgrupacion <= 0) {
+            return ['fecha' => $fecha, 'hora' => $hora];
+        }
+
+        $override = TareaVirtualVencimiento::where('ID_Tarea', $tarea->ID)
+            ->where('Tipo', 1)
+            ->where('ID_Agrupacion', $idAgrupacion)
+            ->first();
+
+        if (!$override) {
+            return ['fecha' => $fecha, 'hora' => $hora];
+        }
+
+        return [
+            'fecha' => (!empty($override->Fecha_Vencimiento) && $override->Fecha_Vencimiento !== '0000-00-00')
+                ? Carbon::parse($override->Fecha_Vencimiento)->format('Y-m-d')
+                : $fecha,
+            'hora' => !empty($override->Hora_Vencimiento) ? (string) $override->Hora_Vencimiento : $hora,
+        ];
+    }
+
+    private function resolveAgrupacionAlumno($alumno, $cicloId)
+    {
+        $idGrupo = (int) ($alumno->ID_Grupo ?? 0);
+        if ($idGrupo <= 0) {
+            return 0;
+        }
+
+        $agr = Agrupacion::where('ID', $idGrupo)
+            ->where('ID_Curso', $alumno->ID_Curso)
+            ->where('ID_Ciclo_Lectivo', $cicloId)
+            ->first();
+
+        return $agr ? (int) $agr->ID : 0;
+    }
+
+    private function isTareaVencida($fecha, $hora)
+    {
+        if (empty($fecha)) {
+            return false;
+        }
+
+        $horaFinal = !empty($hora) ? $hora : '23:59:59';
+        $limite = Carbon::createFromFormat('Y-m-d H:i:s', $fecha . ' ' . $horaFinal, 'America/Argentina/Buenos_Aires');
+
+        return Carbon::now('America/Argentina/Buenos_Aires')->gt($limite);
+    }
+
+    private function buildSafeFileName($nombreOriginal)
+    {
+        $nombreOriginal = trim((string) $nombreOriginal);
+        $extension = strtolower(pathinfo($nombreOriginal, PATHINFO_EXTENSION));
+        $base = pathinfo($nombreOriginal, PATHINFO_FILENAME);
+        $base = preg_replace('/[^A-Za-z0-9\-_]/', '_', $base);
+        $base = preg_replace('/_+/', '_', $base);
+        $base = trim($base, '_');
+
+        if ($base === '') {
+            $base = 'archivo';
+        }
+
+        return date('YmdHis') . '_' . substr(md5(uniqid((string) rand(), true)), 0, 6) . '_' . $base . '.' . $extension;
     }
 }
