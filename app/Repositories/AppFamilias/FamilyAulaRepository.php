@@ -1384,6 +1384,594 @@ class FamilyAulaRepository
         }
     }
 
+    public function listarForosClaseAlumno($studentId, $materiaId, $tipoMateria, $classId, $cicloLectivo = null)
+    {
+        $alumno = Alumno::find($studentId);
+        if (!$alumno) {
+            return null;
+        }
+
+        $tipoMateria = strtolower(trim((string) $tipoMateria));
+        if (!in_array($tipoMateria, ['c', 'g'], true)) {
+            throw new \RuntimeException('Tipo de materia inválido.');
+        }
+
+        $ciclo = $this->resolveCicloAlumno($alumno, $cicloLectivo);
+        if (!$ciclo) {
+            return null;
+        }
+
+        $hoy = Carbon::now('America/Argentina/Buenos_Aires')->format('Y-m-d');
+
+        $items = DB::table('tareas_virtuales as tv')
+            ->join('tareas_envios as te', function ($join) use ($studentId) {
+                $join->on('te.ID_Tarea', '=', 'tv.ID')
+                    ->where('te.ID_Destinatario', '=', $studentId)
+                    ->where('te.Envio', '=', 1);
+            })
+            ->where('tv.ID_Materia', $materiaId)
+            ->where('tv.Tipo_Materia', $tipoMateria)
+            ->where('tv.ID_Clase', $classId)
+            ->where('tv.ID_Ciclo_Lectivo', (int) $ciclo->ID)
+            ->where('tv.Tipo', 2)
+            ->where('tv.Envio', 1)
+            ->where(function ($q) use ($hoy) {
+                $q->whereNull('tv.Fecha_Publicacion')
+                    ->orWhere('tv.Fecha_Publicacion', '0000-00-00')
+                    ->orWhere('tv.Fecha_Publicacion', '<=', $hoy);
+            })
+            ->orderBy('tv.ID', 'desc')
+            ->select(
+                'tv.ID',
+                'tv.Titulo',
+                'tv.Fecha',
+                'tv.Envio',
+                'tv.Cerrada',
+                'tv.ID_Clase',
+                'te.Leido as Leido_Envio'
+            )
+            ->distinct()
+            ->get();
+
+        $out = [];
+        foreach ($items as $t) {
+            $out[] = [
+                'id_foro' => (int) $t->ID,
+                'id_clase' => (int) $t->ID_Clase,
+                'titulo' => (string) $t->Titulo,
+                'fecha' => !empty($t->Fecha) ? Carbon::parse($t->Fecha)->format('d/m/Y') : '',
+                'envio' => (int) $t->Envio,
+                'cerrada' => (int) $t->Cerrada,
+                'leido' => (int) ($t->Leido_Envio ?? 0),
+            ];
+        }
+
+        return [
+            'id_materia' => (int) $materiaId,
+            'tipo_materia' => strtoupper((string) $tipoMateria),
+            'id_clase' => (int) $classId,
+            'foros' => $out,
+        ];
+    }
+
+    public function detalleForoAlumno($studentId, $forumId, $institucionId)
+    {
+        $alumno = Alumno::find($studentId);
+        if (!$alumno) {
+            return null;
+        }
+
+        $foro = $this->findForoAlumno($studentId, $forumId);
+        if (!$foro) {
+            return null;
+        }
+
+        DB::table('tareas_envios')
+            ->where('ID_Tarea', (int) $forumId)
+            ->where('ID_Destinatario', (int) $studentId)
+            ->where('Envio', 1)
+            ->update([
+                'Leido' => 1,
+                'Fecha_Leido' => Carbon::now('America/Argentina/Buenos_Aires')->format('Y-m-d'),
+                'Hora_Leido' => Carbon::now('America/Argentina/Buenos_Aires')->format('H:i:s'),
+            ]);
+
+        $filesMeta = $this->resolveInstitutionFilesMeta((int) $institucionId);
+
+        $adjuntos = DB::table('tareas_adjuntos')
+            ->where('ID_Tarea', (int) $foro->ID)
+            ->orderBy('ID', 'asc')
+            ->get(['ID', 'Archivo']);
+
+        $adjuntosList = [];
+        foreach ($adjuntos as $a) {
+            $adjuntosList[] = [
+                'id_adjunto' => (int) $a->ID,
+                'adjunto' => (string) $a->Archivo,
+                'url_adjunto' => $filesMeta['base_tasks_url'] . (string) $a->Archivo,
+            ];
+        }
+
+        $base = DB::table('tareas_envios as te')
+            ->where('te.ID_Tarea', (int) $foro->ID)
+            ->selectRaw("
+            COUNT(DISTINCT te.ID_Destinatario) as total_asignados,
+            COUNT(DISTINCT CASE WHEN te.Leido = 1 THEN te.ID_Destinatario END) as leidos
+        ")
+            ->first();
+
+        $foroStats = DB::table('tareas_virtuales_foros as tf')
+            ->where('tf.ID_Tarea', (int) $foro->ID)
+            ->where('tf.B', 0)
+            ->selectRaw("
+            COUNT(*) as mensajes_activos,
+            SUM(CASE WHEN tf.ID_Respuesta = 0 THEN 1 ELSE 0 END) as threads,
+            SUM(CASE WHEN tf.ID_Respuesta > 0 THEN 1 ELSE 0 END) as respuestas,
+            COUNT(DISTINCT CASE WHEN tf.Tipo_Usuario = 2 THEN tf.ID_Usuario END) as participaron
+        ")
+            ->first();
+
+        $adjInterv = DB::table('tareas_foros_adjuntos as tfa')
+            ->join('tareas_virtuales_foros as tf', 'tf.ID', '=', 'tfa.ID_Intervencion')
+            ->where('tf.ID_Tarea', (int) $foro->ID)
+            ->where('tf.B', 0)
+            ->selectRaw('COUNT(*) as adjuntos')
+            ->first();
+
+        $estado = ((int) $foro->Cerrada === 0)
+            ? (((int) $foro->Envio === 1) ? 'Publicada' : 'En producción')
+            : 'Oculta (Cerrada)';
+
+        return [
+            'id_foro' => (int) $foro->ID,
+            'id_materia' => (int) $foro->ID_Materia,
+            'tipo_materia' => strtoupper((string) $foro->Tipo_Materia),
+            'id_clase' => (int) $foro->ID_Clase,
+            'foro' => [
+                'titulo' => (string) $foro->Titulo,
+                'consigna' => (string) $foro->Consigna,
+                'estado' => $estado,
+                'fecha' => !empty($foro->Fecha) ? Carbon::parse($foro->Fecha)->format('d/m/Y') : '',
+                'fecha_publicacion' => (!empty($foro->Fecha_Publicacion) && $foro->Fecha_Publicacion !== '0000-00-00')
+                    ? Carbon::parse($foro->Fecha_Publicacion)->format('d/m/Y')
+                    : '',
+                'hora_publicacion' => (string) ($foro->Hora_Publicacion ?? ''),
+                'fecha_vencimiento' => (!empty($foro->Fecha_Vencimiento) && $foro->Fecha_Vencimiento !== '0000-00-00')
+                    ? Carbon::parse($foro->Fecha_Vencimiento)->format('d/m/Y')
+                    : '',
+                'hora_vencimiento' => (string) ($foro->Hora_Vencimiento ?? ''),
+                'dest_sel' => (int) ($foro->Dest_Sel ?? 0),
+                'cerrada' => (int) $foro->Cerrada,
+                'envio' => (int) $foro->Envio,
+                'leido' => (int) ($foro->Leido_Envio ?? 0),
+            ],
+            'adjuntos_tarea' => $adjuntosList,
+            'estadisticas' => [
+                'total_asignados' => (int) ($base->total_asignados ?? 0),
+                'leidos' => (int) ($base->leidos ?? 0),
+                'participaron' => (int) ($foroStats->participaron ?? 0),
+                'mensajes_activos' => (int) ($foroStats->mensajes_activos ?? 0),
+                'threads' => (int) ($foroStats->threads ?? 0),
+                'respuestas' => (int) ($foroStats->respuestas ?? 0),
+                'adjuntos' => (int) ($adjInterv->adjuntos ?? 0),
+            ],
+        ];
+    }
+
+    public function listarForoAlumnoPaginado($studentId, $forumId, $institucionId, $perPage = 50, $idRespuesta = 0, $order = 'DESC')
+    {
+        $alumno = Alumno::find($studentId);
+        if (!$alumno) {
+            throw new \RuntimeException('El alumno indicado no existe.');
+        }
+
+        $foro = $this->findForoAlumno($studentId, $forumId);
+        if (!$foro) {
+            throw new \RuntimeException('El foro indicado no existe o no pertenece al alumno.');
+        }
+
+        $idRespuesta = (int) $idRespuesta;
+        if ($idRespuesta > 0) {
+            $padreOk = DB::table('tareas_virtuales_foros')
+                ->where('ID', $idRespuesta)
+                ->where('ID_Tarea', $forumId)
+                ->where('B', 0)
+                ->exists();
+
+            if (!$padreOk) {
+                throw new \RuntimeException('La intervención padre no existe.');
+            }
+        }
+
+        $order = strtoupper(trim((string) $order));
+        if (!in_array($order, ['ASC', 'DESC'], true)) {
+            $order = 'DESC';
+        }
+
+        $perPage = (int) $perPage;
+        if ($perPage <= 0) {
+            $perPage = 50;
+        }
+        if ($perPage > 100) {
+            $perPage = 100;
+        }
+
+        $filesMeta = $this->resolveInstitutionFilesMeta((int) $institucionId);
+
+        $p = DB::table('tareas_virtuales_foros')
+            ->where('ID_Tarea', $forumId)
+            ->where('B', 0)
+            ->where('ID_Respuesta', $idRespuesta)
+            ->orderBy('ID', $order)
+            ->paginate($perPage);
+
+        $items = $p->items();
+
+        $idsPagina = [];
+        foreach ($items as $it) {
+            $id = is_object($it) ? (int) ($it->ID ?? 0) : 0;
+            if ($id > 0) {
+                $idsPagina[] = $id;
+            }
+        }
+
+        $marcados = 0;
+        if (!empty($idsPagina)) {
+            $now = Carbon::now('America/Argentina/Buenos_Aires');
+
+            $marcados = (int) DB::table('tareas_virtuales_foros')
+                ->whereIn('ID', $idsPagina)
+                ->where('ID_Tarea', $forumId)
+                ->where('B', 0)
+                ->where('Tipo_Usuario', '<>', 2)
+                ->where('Leido', 0)
+                ->update([
+                    'Leido' => 1,
+                    'Fecha_Leido' => $now->format('Y-m-d'),
+                    'Hora_Leido' => $now->format('H:i:s'),
+                ]);
+        }
+
+        $adjuntosPorIntervencion = [];
+        if (!empty($idsPagina)) {
+            $rowsAdj = DB::table('tareas_foros_adjuntos')
+                ->whereIn('ID_Intervencion', $idsPagina)
+                ->orderBy('ID', 'asc')
+                ->get(['ID', 'ID_Intervencion', 'Archivo']);
+
+            foreach ($rowsAdj as $a) {
+                $idInterv = (int) $a->ID_Intervencion;
+                if (!isset($adjuntosPorIntervencion[$idInterv])) {
+                    $adjuntosPorIntervencion[$idInterv] = [];
+                }
+
+                $adjuntosPorIntervencion[$idInterv][] = [
+                    'id_adjunto' => (int) $a->ID,
+                    'adjunto' => (string) $a->Archivo,
+                    'url_adjunto' => $filesMeta['base_tasks_url'] . (string) $a->Archivo,
+                ];
+            }
+        }
+
+        $idsAlumnos = [];
+        $idsPersonal = [];
+
+        foreach ($items as $it) {
+            $tipoUsu = (int) ($it->Tipo_Usuario ?? 0);
+            $idUsu = (int) ($it->ID_Usuario ?? 0);
+
+            if ($idUsu <= 0) {
+                continue;
+            }
+
+            if ($tipoUsu === 2) {
+                $idsAlumnos[] = $idUsu;
+            } else {
+                $idsPersonal[] = $idUsu;
+            }
+        }
+
+        $alumnosById = [];
+        $avatarByAlumnoId = [];
+
+        if (!empty($idsAlumnos)) {
+            $rows = DB::table('alumnos')
+                ->whereIn('ID', array_values(array_unique($idsAlumnos)))
+                ->get(['ID', 'Nombre', 'Apellido', 'Perfil']);
+
+            foreach ($rows as $r) {
+                $idA = (int) $r->ID;
+                $alumnosById[$idA] = trim((string) $r->Apellido) . ', ' . trim((string) $r->Nombre);
+
+                $perfil = trim((string) ($r->Perfil ?? ''));
+                $avatarByAlumnoId[$idA] = $perfil !== '' ? ($filesMeta['base_avatar_url'] . $perfil) : '';
+            }
+        }
+
+        $personalById = [];
+        if (!empty($idsPersonal)) {
+            $rows = DB::table('personal')
+                ->whereIn('ID', array_values(array_unique($idsPersonal)))
+                ->get(['ID', 'Nombre', 'Apellido']);
+
+            foreach ($rows as $r) {
+                $personalById[(int) $r->ID] = trim((string) $r->Apellido) . ', ' . trim((string) $r->Nombre);
+            }
+        }
+
+        $replyCountByRoot = [];
+        $replyUnreadByRoot = [];
+
+        if (!empty($idsPagina)) {
+            $rows = DB::table('tareas_virtuales_foros')
+                ->where('ID_Tarea', $forumId)
+                ->where('B', 0)
+                ->whereIn('ID_Respuesta', $idsPagina)
+                ->groupBy('ID_Respuesta')
+                ->selectRaw('ID_Respuesta as Root, COUNT(*) as Cant')
+                ->get();
+
+            foreach ($rows as $r) {
+                $replyCountByRoot[(int) $r->Root] = (int) $r->Cant;
+            }
+
+            $rowsU = DB::table('tareas_virtuales_foros')
+                ->where('ID_Tarea', $forumId)
+                ->where('B', 0)
+                ->whereIn('ID_Respuesta', $idsPagina)
+                ->where('Tipo_Usuario', '<>', 2)
+                ->where('Leido', 0)
+                ->groupBy('ID_Respuesta')
+                ->selectRaw('ID_Respuesta as Root, COUNT(*) as Cant')
+                ->get();
+
+            foreach ($rowsU as $r) {
+                $replyUnreadByRoot[(int) $r->Root] = (int) $r->Cant;
+            }
+        }
+
+        $itemsOut = [];
+        foreach ($items as $it) {
+            $arr = (array) $it;
+
+            $idInterv = (int) ($arr['ID'] ?? 0);
+            $tipoUsu = (int) ($arr['Tipo_Usuario'] ?? 0);
+            $idUsu = (int) ($arr['ID_Usuario'] ?? 0);
+
+            $nombre = '';
+            $avatar = '';
+
+            if ($tipoUsu === 2) {
+                $nombre = isset($alumnosById[$idUsu]) ? $alumnosById[$idUsu] : '';
+                $avatar = isset($avatarByAlumnoId[$idUsu]) ? $avatarByAlumnoId[$idUsu] : '';
+            } else {
+                $nombre = isset($personalById[$idUsu]) ? $personalById[$idUsu] : '';
+            }
+
+            $itemsOut[] = [
+                'id' => (int) ($arr['ID'] ?? 0),
+                'id_tarea' => (int) ($arr['ID_Tarea'] ?? 0),
+                'id_usuario' => $idUsu,
+                'tipo_usuario' => $tipoUsu,
+                'fecha' => (string) ($arr['Fecha'] ?? ''),
+                'hora' => (string) ($arr['Hora'] ?? ''),
+                'mensaje' => (string) ($arr['Mensaje'] ?? ''),
+                'leido' => (int) ($arr['Leido'] ?? 0),
+                'id_respuesta' => (int) ($arr['ID_Respuesta'] ?? 0),
+                'usuario_nombre' => $nombre,
+                'usuario_avatar' => $avatar,
+                'adjuntos' => isset($adjuntosPorIntervencion[$idInterv]) ? $adjuntosPorIntervencion[$idInterv] : [],
+                'respuestas' => [
+                    'count' => (int) (isset($replyCountByRoot[$idInterv]) ? $replyCountByRoot[$idInterv] : 0),
+                    'unread' => (int) (isset($replyUnreadByRoot[$idInterv]) ? $replyUnreadByRoot[$idInterv] : 0),
+                    'id_padre' => $idInterv,
+                ],
+            ];
+        }
+
+        return [
+            'items' => $itemsOut,
+            'pagination' => [
+                'per_page' => (int) $p->perPage(),
+                'current_page' => (int) $p->currentPage(),
+                'total_pages' => (int) $p->lastPage(),
+                'total_items' => (int) $p->total(),
+                'count' => count($itemsOut),
+                'has_more' => $p->hasMorePages(),
+                'order' => $order,
+            ],
+            'filters' => [
+                'id_foro' => (int) $forumId,
+                'id_respuesta' => (int) $idRespuesta,
+            ],
+            'read' => [
+                'marcados' => (int) $marcados,
+            ],
+        ];
+    }
+
+    public function enviarIntervencionForoAlumno($studentId, $forumId, $institucionId, array $payload, array $archivos = [])
+    {
+        $alumno = Alumno::find($studentId);
+        if (!$alumno) {
+            throw new \RuntimeException('El alumno indicado no existe.');
+        }
+
+        $foro = $this->findForoAlumno($studentId, $forumId);
+        if (!$foro) {
+            throw new \RuntimeException('El foro indicado no existe o no pertenece al alumno.');
+        }
+
+        if ((int) $foro->Cerrada === 1) {
+            throw new \RuntimeException('El foro está cerrado y no admite nuevas intervenciones.');
+        }
+
+        $mensaje = trim((string) ($payload['mensaje'] ?? ''));
+        if ($mensaje === '') {
+            throw new \RuntimeException('El mensaje es obligatorio.');
+        }
+
+        $idRespuesta = (int) ($payload['id_respuesta'] ?? 0);
+        if ($idRespuesta > 0) {
+            $existePadre = DB::table('tareas_virtuales_foros')
+                ->where('ID', $idRespuesta)
+                ->where('ID_Tarea', $forumId)
+                ->where('B', 0)
+                ->exists();
+
+            if (!$existePadre) {
+                throw new \RuntimeException('La intervención a responder no existe en este foro.');
+            }
+        }
+
+        $archivosMovidos = [];
+        $now = Carbon::now('America/Argentina/Buenos_Aires');
+
+        DB::beginTransaction();
+
+        try {
+            $idIntervencion = DB::table('tareas_virtuales_foros')->insertGetId([
+                'ID_Tarea' => (int) $forumId,
+                'ID_Usuario' => (int) $studentId,
+                'Tipo_Usuario' => 2,
+                'Fecha' => $now->format('Y-m-d'),
+                'Hora' => $now->format('H:i:s'),
+                'Mensaje' => $mensaje,
+                'B' => 0,
+                'Leido' => 0,
+                'Fecha_Leido' => '0000-00-00',
+                'Hora_Leido' => '00:00:00',
+                'ID_Respuesta' => $idRespuesta > 0 ? $idRespuesta : 0,
+            ]);
+
+            $insertadosAdj = 0;
+            $nombresAdj = [];
+
+            if (!empty($archivos) && is_array($archivos)) {
+                $filesMeta = $this->resolveInstitutionFilesMeta((int) $institucionId);
+                $ruta = $filesMeta['filesystem_path'];
+
+                $extPermitidas = ['png', 'jpg', 'jpeg', 'webp', 'doc', 'docx', 'xls', 'xlsx', 'pdf', 'ppt', 'pptx', 'mp3', 'mp4', 'mov', 'zip'];
+
+                foreach ($archivos as $file) {
+                    if (!$file || !method_exists($file, 'isValid') || !$file->isValid()) {
+                        continue;
+                    }
+
+                    $nombreOriginal = (string) $file->getClientOriginalName();
+                    $ext = strtolower(pathinfo($nombreOriginal, PATHINFO_EXTENSION));
+
+                    if ($ext !== '' && !in_array($ext, $extPermitidas, true)) {
+                        throw new \RuntimeException('Formato de archivo no permitido: ' . $ext);
+                    }
+
+                    $nombreFinal = $this->buildSafeFileName($nombreOriginal);
+                    $file->move($ruta, $nombreFinal);
+
+                    $archivosMovidos[] = $ruta . DIRECTORY_SEPARATOR . $nombreFinal;
+
+                    DB::table('tareas_foros_adjuntos')->insert([
+                        'ID_Intervencion' => (int) $idIntervencion,
+                        'Archivo' => $nombreFinal,
+                        'Servidor' => 1,
+                    ]);
+
+                    $insertadosAdj++;
+                    $nombresAdj[] = $nombreFinal;
+                }
+            }
+
+            DB::commit();
+
+            return [
+                'id_foro' => (int) $forumId,
+                'id_intervencion' => (int) $idIntervencion,
+                'id_respuesta' => $idRespuesta > 0 ? $idRespuesta : 0,
+                'adjuntos' => [
+                    'insertados' => $insertadosAdj,
+                    'archivos' => $nombresAdj,
+                ],
+            ];
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            foreach ($archivosMovidos as $path) {
+                try {
+                    if (is_string($path) && $path !== '' && file_exists($path)) {
+                        @unlink($path);
+                    }
+                } catch (\Throwable $ignored) {
+                }
+            }
+
+            Log::error('Error enviarIntervencionForoAlumno', [
+                'student_id' => (int) $studentId,
+                'forum_id' => (int) $forumId,
+                'id_respuesta' => $idRespuesta,
+                'msg' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
+    }
+
+    private function findForoAlumno($studentId, $forumId)
+    {
+        $hoy = Carbon::now('America/Argentina/Buenos_Aires')->format('Y-m-d');
+
+        return DB::table('tareas_virtuales as tv')
+            ->join('tareas_envios as te', function ($join) use ($studentId) {
+                $join->on('te.ID_Tarea', '=', 'tv.ID')
+                    ->where('te.ID_Destinatario', '=', $studentId)
+                    ->where('te.Envio', '=', 1);
+            })
+            ->where('tv.ID', $forumId)
+            ->where('tv.Tipo', 2)
+            ->where('tv.Envio', 1)
+            ->where(function ($q) use ($hoy) {
+                $q->whereNull('tv.Fecha_Publicacion')
+                    ->orWhere('tv.Fecha_Publicacion', '0000-00-00')
+                    ->orWhere('tv.Fecha_Publicacion', '<=', $hoy);
+            })
+            ->select(
+                'tv.*',
+                'te.Leido as Leido_Envio',
+                'te.Resuelto as Resuelto_Envio',
+                'te.Corregido as Corregido_Envio'
+            )
+            ->first();
+    }
+
+    private function resolveInstitutionFilesMeta($institucionId)
+    {
+        $institucion = DatabaseManager::getInstitutionData((int) $institucionId);
+
+        $carpeta = trim((string) ($institucion->Carpeta ?? ''));
+        $urlBase = rtrim((string) ($institucion->URL ?? ''), '/');
+
+        if ($carpeta === '') {
+            throw new \RuntimeException('No se pudo determinar la carpeta institucional.');
+        }
+
+        $ruta = (string) config('app.ruta_tareas');
+        $ruta = str_replace('{carpeta}', $carpeta, $ruta);
+        $ruta = rtrim($ruta, "\\/");
+
+        if (!file_exists($ruta)) {
+            @mkdir($ruta, 0755, true);
+        }
+
+        if (!file_exists($ruta)) {
+            throw new \RuntimeException('No se pudo crear la carpeta destino para adjuntos.');
+        }
+
+        return [
+            'filesystem_path' => $ruta,
+            'base_tasks_url' => $urlBase . '/' . trim($carpeta, '/') . '/tareas/',
+            'base_avatar_url' => $urlBase . '/' . trim($carpeta, '/') . '/imagenes/usuarios/',
+        ];
+    }
+
     private function resolveCicloAlumno($alumno, $cicloLectivo = null)
     {
         $cicloQuery = DB::table('ciclo_lectivo')
