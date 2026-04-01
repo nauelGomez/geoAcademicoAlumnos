@@ -107,6 +107,13 @@ Route::middleware(['tenant'])->group(function () {
         Route::post('/{studentId}/{materiaId}/{tipoMateria}/tarea/{taskId}/resolver', ide_route([FamilyAulaController::class, 'resolverTarea']));
     });
 
+    Route::prefix('foros')->group(function () {
+     Route::get('/{studentId}/{materiaId}/{tipoMateria}/clase/{classId}/foros', [FamilyAulaController::class, 'listarForosClase']);
+    Route::get('/{studentId}/{forumId}', [FamilyAulaController::class, 'detalleForo']);
+    Route::get('/{studentId}/{forumId}/intervenciones/listado', [FamilyAulaController::class, 'listarForoPaginado']);
+    Route::post('/{studentId}/{forumId}/intervenciones/', [FamilyAulaController::class, 'enviarIntervencionForo']);
+    });
+
     // --- Calificaciones / Grades ---
     Route::prefix('grades')->group(function () {
         Route::get('/student/{studentId}', ide_route([GradeController::class, 'studentGrades']));
