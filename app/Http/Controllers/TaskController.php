@@ -33,25 +33,32 @@ class TaskController extends Controller
         }
     }
 
-    public function studentTasks(int $studentId): JsonResponse
-    {
-        try {
-            $data = $this->taskRepository->getTasksForStudent($studentId);
-            
-            if (!$data) {
-                return response()->json(['status' => 'error', 'message' => 'Alumno no encontrado'], 404);
-            }
-
+public function studentTasks(int $studentId): JsonResponse
+{
+    try {
+        $data = $this->taskRepository->getTasksForStudent($studentId);
+        
+        if (!$data) {
             return response()->json([
-                'status' => 'success',
-                'data' => $data,
-                'count' => count($data['tasks'])
-            ], 200);
-        } catch (Exception $e) {
-            \Log::error('Error fetching student tasks: ' . $e->getMessage());
-            return response()->json(['status' => 'error', 'message' => 'Error al obtener tareas del alumno'], 500);
+                'status' => 'error', 
+                'message' => 'Alumno no encontrado'
+            ], 404);
         }
+
+        return response()->json([
+            'status' => 'success',
+            'data'   => $data,
+            'count'  => count($data['tasks'])
+        ], 200);
+
+    } catch (\Exception $e) {
+        \Log::error('Error fetching student tasks: ' . $e->getMessage());
+        return response()->json([
+            'status'  => 'error', 
+            'message' => 'Error al obtener tareas del alumno'
+        ], 500);
     }
+}
 
     public function show(int $taskId): JsonResponse
     {
