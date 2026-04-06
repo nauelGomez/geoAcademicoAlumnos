@@ -14,3 +14,15 @@ yarn-error.log
 /.idea
 /.vscode
 /config/institutions.php
+# Ruta exacta desde la raíz (La más recomendada)
+/app/Services/DatabaseManager.php
+
+# Ruta relativa (Funciona si el .gitignore está en la raíz)
+app/Services/DatabaseManager.php
+
+# Por si hay espacios o problemas de case-sensitivity (aunque en PHP somos estrictos)
+**/DatabaseManager.php
+
+# Ignorar todo el contenido de Services si DatabaseManager es lo único sensible
+app/Services/*.php
+!app/Services/AttendanceService.php

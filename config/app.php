@@ -169,7 +169,7 @@ return [
         'URL' => Illuminate\Support\Facades\URL::class,
         'Validator' => Illuminate\Support\Facades\Validator::class,
         'View' => Illuminate\Support\Facades\View::class,
-        
+
         // ❌ LOS ALIASES MODERNOS APAGADOS
         // 'Arr' => Illuminate\Support\Arr::class,
         // 'Date' => Illuminate\Support\Facades\Date::class,
@@ -179,5 +179,7 @@ return [
         // 'Str' => Illuminate\Support\Str::class,
 
     ],
+
+    'ruta_tareas' => env('RUTA_TAREAS', '{carpeta}/tareas'),
 
 ];

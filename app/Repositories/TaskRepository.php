@@ -5,6 +5,7 @@ namespace App\Repositories;
 use App\Models\Task;
 use App\Models\Student;
 use App\Models\TaskResolution;
+use App\Models\TaskSubmission;
 
 class TaskRepository
 {
@@ -16,31 +17,55 @@ class TaskRepository
             ->orderBy('ID', 'desc')
             ->get();
     }
-
-    public function getTasksForStudent(int $studentId)
+public function getTasksForStudent(int $studentId)
     {
+        // 1. Validamos existencia del alumno (Contexto para la respuesta)
         $student = Student::with(['course', 'level'])->find($studentId);
-        if (!$student) return null;
+        
+        if (!$student) {
+            return null;
+        }
 
-        $tasks = Task::with(['subject', 'course', 'teacher', 'resolutions' => function($q) use ($studentId) {
-                $q->where('ID_Alumno', $studentId);
-            }])
-            ->active()
-            ->orderBy('ID', 'desc')
+        // 2. Select principal sobre 'tareas_envios' (TaskSubmission)
+        // Cargamos la relación 'task' (tareas_virtuales) con sus propios filtros
+        $submissions = TaskSubmission::where('ID_Destinatario', $studentId)
+            ->with([
+                'task' => function($query) {
+                    // Solo traemos la tarea si está activa (Envio=1, Cerrada=0)
+                    $query->active()->with(['subject', 'teacher', 'course']);
+                }
+            ])
             ->get();
-            // Acá podrías aplicar el filter y map() que tenías en el controller viejo
+
+        // 3. Mapeamos los resultados para devolver una lista de objetos de tarea limpios
+        // Filtramos los envíos cuya tarea asociada no esté activa o sea nula
+        $tasks = $submissions->map(function ($submission) {
+            if (!$submission->task) {
+                return null;
+            }
+            
+            // Adjuntamos datos del envío a la tarea para tener todo en un solo objeto
+            $task = $submission->task;
+            $task->info_envio = [
+                'ID_Envio'  => $submission->ID,
+                'Leido'     => $submission->Leido,
+                'Resuelto'  => $submission->Resuelto,
+                'Corregido' => $submission->Corregido
+            ];
+            
+            return $task;
+        })->filter()->values();
 
         return [
             'student' => [
-                'ID' => $student->ID,
-                'Nombre' => $student->Nombre . ' ' . $student->Apellido,
-                'Curso' => $student->course->Cursos ?? 'N/A',
-                'Nivel' => $student->level->Nivel ?? 'N/A'
+                'ID'     => $student->ID,
+                'Nombre' => trim($student->Nombre . ' ' . $student->Apellido),
+                'Curso'  => $student->course->Cursos ?? 'N/A',
+                'Nivel'  => $student->level->Nivel ?? 'N/A'
             ],
             'tasks' => $tasks
         ];
     }
-
     public function getTaskById(int $taskId)
     {
         return Task::with(['subject', 'course', 'teacher', 'cycle', 'resolutions', 'submissions'])->find($taskId);

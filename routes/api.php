@@ -11,8 +11,10 @@ use Illuminate\Support\Facades\Route;
 | (habilitando el Ctrl+Click en el método), pero le entrega a Laravel 5.5
 | el string exacto que necesita para que `php artisan route:cache` no se rompa.
 */
+
 if (!function_exists('ide_route')) {
-    function ide_route(array $callable) {
+    function ide_route(array $callable)
+    {
         return '\\' . $callable[0] . '@' . $callable[1];
     }
 }
@@ -101,24 +103,25 @@ Route::middleware(['tenant'])->group(function () {
         Route::get('/{taskId}', ide_route([TaskController::class, 'show']));
         Route::get('/student/{studentId}', ide_route([TaskController::class, 'studentTasks']));
         Route::post('/resolution', ide_route([TaskController::class, 'submitResolution']));
+        Route::get('/{studentId}/{materiaId}/{tipoMateria}/tarea/{taskId}', ide_route([FamilyAulaController::class, 'detalleTarea']));
+        Route::post('/{studentId}/{materiaId}/{tipoMateria}/tarea/{taskId}/resolver', ide_route([FamilyAulaController::class, 'resolverTarea']));
+    });
+
+    Route::prefix('foros')->group(function () {
+     Route::get('/{studentId}/{materiaId}/{tipoMateria}/clase/{classId}/foros', [FamilyAulaController::class, 'listarForosClase']);
+    Route::get('/{studentId}/{forumId}', [FamilyAulaController::class, 'detalleForo']);
+    Route::get('/{studentId}/{forumId}/intervenciones/listado', [FamilyAulaController::class, 'listarForoPaginado']);
+    Route::post('/{studentId}/{forumId}/intervenciones/', [FamilyAulaController::class, 'enviarIntervencionForo']);
     });
 
     // --- Calificaciones / Grades ---
     Route::prefix('grades')->group(function () {
-    // 1. PRIMERO las rutas estáticas
-    Route::get('/student/evolucion-cursada', ide_route([GradeController::class, 'evolucionCursada']));
-    
-    // 2. DESPUÉS las rutas dinámicas, restringiendo el ID para que solo acepte números
-    Route::get('/student/{studentId}', ide_route([GradeController::class, 'studentGrades']))
-        ->where('studentId', '[0-9]+'); // <-- Clave para que no se coma otras URLs
-        
-    Route::get('/student/{studentId}/summary', ide_route([GradeController::class, 'gradesSummary']))
-        ->where('studentId', '[0-9]+');
+        Route::get('/student/{studentId}', ide_route([GradeController::class, 'studentGrades']));
+        Route::get('/student/{studentId}/summary', ide_route([GradeController::class, 'gradesSummary']));
 
-    // --- Course Grades ---
-    Route::get('/course/student/{studentId}', ide_route([CourseGradeController::class, 'studentGrades']))
-        ->where('studentId', '[0-9]+');
-}); 
+        // --- Course Grades ---
+        Route::get('/course/student/{studentId}', ide_route([CourseGradeController::class, 'studentGrades']));
+    });
 
     // --- Noticias / News ---
     Route::prefix('news')->group(function () {
@@ -195,12 +198,12 @@ Route::middleware(['tenant'])->group(function () {
     |--------------------------------------------------------------------------
     */
     Route::prefix('app-familias')->group(function () {
-        
+
         Route::get('/linked-students', ide_route([FamilyStudentController::class, 'index']));
         Route::get('/dashboard/student/{studentId}', ide_route([FamilyDashboardController::class, 'show']));
         Route::get('/agenda/student/{studentId}', ide_route([AgendaController::class, 'index']));
         Route::get('/intensification/student/{studentId}', ide_route([IntensificationController::class, 'index']));
-        
+
         // MUROS DE NOVEDADES
         Route::get('/walls/student/{studentId}', ide_route([FamilyWallController::class, 'index']));
         Route::get('/walls/{wallId}/student/{studentId}', ide_route([FamilyWallController::class, 'show']));
@@ -232,7 +235,7 @@ Route::middleware(['tenant'])->group(function () {
 
         // MESAS DE EXAMEN
         Route::get('/exam-boards/student/{studentId}', ide_route([ExamBoardController::class, 'index']));
-        
+
         // AULAS VIRTUALES
         Route::get('/students/{studentId}/aulas', ide_route([FamilyAulaController::class, 'index']));
         Route::get('/students/{studentId}/aulas/{materiaId}/tipo/{tipoMateria}', ide_route([FamilyAulaController::class, 'show']));

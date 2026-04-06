@@ -4,33 +4,36 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class TareaConsulta extends Model
+class TareaEnvio extends Model
 {
-    protected $table = 'tareas_consultas';
+    protected $table = 'tareas_envios';
     protected $primaryKey = 'ID';
     public $timestamps = false;
 
     protected $fillable = [
         'ID_Tarea',
-        'ID_Alumno',
-        'Tipo',
-        'ID_Usuario',
-        'Consulta',
-        'Fecha',
+        'ID_Destinatario',
+        'Aleatorio',
+        'Envio',
         'Leido',
         'Fecha_Leido',
         'Hora_Leido',
+        'IP_Leido',
+        'MailD',
+        'Resuelto',
+        'Corregido',
     ];
 
     protected $casts = [
         'ID' => 'integer',
         'ID_Tarea' => 'integer',
-        'ID_Alumno' => 'integer',
-        'ID_Usuario' => 'integer',
-        'Fecha' => 'date:Y-m-d',
+        'ID_Destinatario' => 'integer',
+        'Envio' => 'integer',
         'Leido' => 'integer',
-        'Fecha_Leido' => 'string',
+        'Fecha_Leido' => 'date:Y-m-d',
         'Hora_Leido' => 'string', // TIME
+        'Resuelto' => 'integer',
+        'Corregido' => 'integer',
     ];
 
     public function tarea()
@@ -38,13 +41,13 @@ class TareaConsulta extends Model
         return $this->belongsTo(TareaVirtual::class, 'ID_Tarea', 'ID');
     }
 
-    public function scopeNoLeidas($query)
+    public function scopeNoLeidos($query)
     {
         return $query->where('Leido', 0);
     }
 
-    public function scopeTipo($query, string $tipo)
+    public function scopePendientesCorreccion($query)
     {
-        return $query->where('Tipo', strtoupper(trim($tipo)));
+        return $query->where('Envio', 1)->where('Resuelto', 1)->where('Corregido', 0);
     }
 }
