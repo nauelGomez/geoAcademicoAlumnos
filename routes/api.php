@@ -108,11 +108,19 @@ Route::middleware(['tenant'])->group(function () {
     });
 
     Route::prefix('foros')->group(function () {
-     Route::get('/{studentId}/{materiaId}/{tipoMateria}/clase/{classId}/foros', [FamilyAulaController::class, 'listarForosClase']);
-    Route::get('/{studentId}/{forumId}', [FamilyAulaController::class, 'detalleForo']);
-    Route::get('/{studentId}/{forumId}/intervenciones/listado', [FamilyAulaController::class, 'listarForoPaginado']);
-    Route::post('/{studentId}/{forumId}/intervenciones/', [FamilyAulaController::class, 'enviarIntervencionForo']);
+        Route::get('/{studentId}/{materiaId}/{tipoMateria}/clase/{classId}/foros', [FamilyAulaController::class, 'listarForosClase']);
+        Route::get('/{studentId}/{forumId}', [FamilyAulaController::class, 'detalleForo']);
+        Route::get('/{studentId}/{forumId}/intervenciones/listado', [FamilyAulaController::class, 'listarForoPaginado']);
+        Route::post('/{studentId}/{forumId}/intervenciones/', [FamilyAulaController::class, 'enviarIntervencionForo']);
     });
+
+
+    Route::prefix('clases')->group(function () {
+        Route::get('{studentId}/{materiaId}/{tipoMateria}/clase/{classId}/detalle/{id}', [FamilyAulaController::class, 'detalleClase']);
+        Route::get('{studentId}/{materiaId}/{tipoMateria}/clase/{classId}/contenidos/{id}', [FamilyAulaController::class, 'listarContenidosClase']);
+    });
+
+
 
     // --- Calificaciones / Grades ---
     Route::prefix('grades')->group(function () {
