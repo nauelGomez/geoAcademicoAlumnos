@@ -24,7 +24,7 @@ return [
         'port'     => env('DB_PORT_THIRD', '3306'),
         'database' => env('DB_DATABASE_THIRD', 'dmendoza_pesge_demo'),
         'username' => env('DB_USERNAME_THIRD', 'root'),
-        'password' => env('DB_PASSWORD_THIRD', '8695'), // El .env dice Lola2704, toma prioridad. Si no existe, usa 8695.
+        'password' => env('DB_PASSWORD_THIRD', ''), // El .env dice Lola2704, toma prioridad. Si no existe, usa .
     ],
 
     6 => [
@@ -69,7 +69,7 @@ return [
         'port'     => env('DB_PORT_TWELVE', '3306'),
         'database' => env('DB_DATABASE_TWELVE', 'geodnl_geoaca'),
         'username' => env('DB_USERNAME_TWELVE', 'root'),
-        'password' => env('DB_PASSWORD_TWELVE', '8695'),
+        'password' => env('DB_PASSWORD_TWELVE', ''),
     ],
 
     13 => [
@@ -78,7 +78,7 @@ return [
         'port'     => env('DB_PORT_SEVENTH', '3306'),
         'database' => env('DB_DATABASE_SEVENTH', 'geodnl_iquilmes'),
         'username' => env('DB_USERNAME_SEVENTH', 'root'),
-        'password' => env('DB_PASSWORD_SEVENTH', '8695'),
+        'password' => env('DB_PASSWORD_SEVENTH', ''),
     ],
 
     14 => [
@@ -123,7 +123,7 @@ return [
         'port'     => env('DB_PORT_OCTEEN', '3306'),
         'database' => env('DB_DATABASE_OCTEEN', 'geodnl_bristol'),
         'username' => env('DB_USERNAME_OCTEEN', 'root'),
-        'password' => env('DB_PASSWORD_OCTEEN', '8695'),
+        'password' => env('DB_PASSWORD_OCTEEN', ''),
     ],
 
     19 => [
@@ -150,7 +150,7 @@ return [
         'port'     => env('DB_PORT_FIFTEEN', '3306'),
         'database' => env('DB_DATABASE_FIFTEEN', 'geodnl_euteo'),
         'username' => env('DB_USERNAME_FIFTEEN', 'root'),
-        'password' => env('DB_PASSWORD_FIFTEEN', '8695'),
+        'password' => env('DB_PASSWORD_FIFTEEN', ''),
     ],
 
     22 => [
@@ -267,7 +267,7 @@ return [
         'port'     => env('DB_PORT_TWENTY_EIGHT', '3306'),
         'database' => env('DB_DATABASE_TWENTY_EIGHT', 'geodnl_hoy'),
         'username' => env('DB_USERNAME_TWENTY_EIGHT', 'root'),
-        'password' => env('DB_PASSWORD_TWENTY_EIGHT', '8695'),
+        'password' => env('DB_PASSWORD_TWENTY_EIGHT', ''),
     ],
 
     35 => [
@@ -455,6 +455,6 @@ return [
         'port'     => env('DB_PORT', '3306'),
         'database' => env('DB_DATABASE', 'dmendoza_pr_el_gral_familias'),
         'username' => env('DB_USERNAME', 'root'),
-        'password' => env('DB_PASSWORD', '8695'),
+        'password' => env('DB_PASSWORD', ''),
     ],
 ];

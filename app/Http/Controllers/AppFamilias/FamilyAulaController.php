@@ -370,8 +370,7 @@ class FamilyAulaController extends BaseInstitutionController
             $data = $this->repo->detalleForoAlumno(
                 (int) $studentId,
                 (int) $forumId,
-                (int) $request->header('X-Institution-ID'),
-            );
+                (int) $request->header('X-Institution-ID'));
 
             if (!$data) {
                 return response()->json([
