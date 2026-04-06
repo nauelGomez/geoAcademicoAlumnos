@@ -506,4 +506,112 @@ class FamilyAulaController extends BaseInstitutionController
             ], 500);
         }
     }
+
+    public function detalleClase(Request $request, $studentId, $materiaId, $tipoMateria, $classId, $id)
+    {
+        try {
+            $cicloLectivo = $request->query('ciclo');
+
+            $data = $this->repo->detalleClaseAlumno(
+                (int) $studentId,
+                (int) $materiaId,
+                (string) $tipoMateria,
+                (int) $classId,
+                (int) $id,
+                $cicloLectivo
+            );
+
+            if (!$data) {
+                return response()->json([
+                    'success' => false,
+                    'data' => null,
+                    'message' => 'Clase no encontrada.',
+                    'errors' => null,
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $data,
+                'message' => 'Detalle de clase obtenido correctamente.',
+                'errors' => null,
+            ], 200);
+        } catch (\RuntimeException $e) {
+            return response()->json([
+                'success' => false,
+                'data' => null,
+                'message' => $e->getMessage(),
+                'errors' => null,
+            ], 422);
+        } catch (\Throwable $e) {
+            \Log::error('Error FamilyAulaController@detalleClase', [
+                'student_id' => (int) $studentId,
+                'materia_id' => (int) $materiaId,
+                'tipo_materia' => (string) $tipoMateria,
+                'class_id' => (int) $classId,
+                'msg' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'data' => null,
+                'message' => 'Error al obtener el detalle de la clase.',
+                'errors' => [$e->getMessage()],
+            ], 500);
+        }
+    }
+
+    public function listarContenidosClase(Request $request, $studentId, $materiaId, $tipoMateria, $classId, $id)
+    {
+        try {
+            $cicloLectivo = $request->query('ciclo');
+
+            $data = $this->repo->listarContenidosClaseAlumno(
+                (int) $studentId,
+                (int) $materiaId,
+                (string) $tipoMateria,
+                (int) $classId,
+                (int) $id,
+                $cicloLectivo
+            );
+
+            if (!$data) {
+                return response()->json([
+                    'success' => false,
+                    'data' => null,
+                    'message' => 'Clase o contenidos no encontrados.',
+                    'errors' => null,
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $data,
+                'message' => 'Contenidos de clase obtenidos correctamente.',
+                'errors' => null,
+            ], 200);
+        } catch (\RuntimeException $e) {
+            return response()->json([
+                'success' => false,
+                'data' => null,
+                'message' => $e->getMessage(),
+                'errors' => null,
+            ], 422);
+        } catch (\Throwable $e) {
+            \Log::error('Error FamilyAulaController@listarContenidosClase', [
+                'student_id' => (int) $studentId,
+                'materia_id' => (int) $materiaId,
+                'tipo_materia' => (string) $tipoMateria,
+                'class_id' => (int) $classId,
+                'msg' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'data' => null,
+                'message' => 'Error al obtener los contenidos de la clase.',
+                'errors' => [$e->getMessage()],
+            ], 500);
+        }
+    }
 }

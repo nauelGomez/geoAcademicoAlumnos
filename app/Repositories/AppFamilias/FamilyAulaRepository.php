@@ -1915,6 +1915,297 @@ class FamilyAulaRepository
         }
     }
 
+    public function detalleClaseAlumno($studentId, $materiaId, $tipoMateria, $classId, $institucionId, $cicloLectivo = null)
+    {
+        $alumno = Alumno::find($studentId);
+        if (!$alumno) {
+            return null;
+        }
+
+        $tipoMateria = strtolower(trim((string) $tipoMateria));
+        if (!in_array($tipoMateria, ['c', 'g'], true)) {
+            throw new \RuntimeException('Tipo de materia inválido.');
+        }
+
+        $ciclo = $this->resolveCicloAlumno($alumno, $cicloLectivo);
+        if (!$ciclo) {
+            return null;
+        }
+
+        $clase = $this->findClaseAlumno($studentId, $materiaId, $tipoMateria, $classId, (int) $ciclo->ID);
+        if (!$clase) {
+            return null;
+        }
+
+        $now = Carbon::now('America/Argentina/Buenos_Aires');
+
+        DB::table('clases_virtuales_envios')
+            ->where('ID_Clase', (int) $classId)
+            ->where('ID_Destinatario', (int) $studentId)
+            ->where('Envio', 1)
+            ->update([
+                'Leido' => 1,
+                'Fecha_Leido' => $now->format('Y-m-d'),
+                'Hora_Leido' => $now->format('H:i:s'),
+            ]);
+
+        $materiaLabel = $this->resolveMateriaLabelAlumno((int) $materiaId, $tipoMateria);
+
+        $cantRecursosClase = (int) DB::table('clases_virtuales_contenidos as cvc')
+            ->where('cvc.ID_Materia', (int) $materiaId)
+            ->where('cvc.Tipo_Materia', $tipoMateria)
+            ->where('cvc.ID_Clase', (int) $classId)
+            ->where('cvc.Visible', 1)
+            ->where('cvc.Estado', '<=', 1)
+            ->count();
+
+        $cantTareasClase = (int) DB::table('clases_virtuales_actividades as cva')
+            ->join('tareas_virtuales as tv', 'cva.ID_Tarea', '=', 'tv.ID')
+            ->join('tareas_envios as te', function ($join) use ($studentId) {
+                $join->on('te.ID_Tarea', '=', 'tv.ID')
+                    ->where('te.ID_Destinatario', '=', $studentId)
+                    ->where('te.Envio', '=', 1);
+            })
+            ->where('cva.ID_Clase', (int) $classId)
+            ->where('cva.Visible', 1)
+            ->where('tv.Tipo', 1)
+            ->where('tv.Cerrada', 0)
+            ->where('tv.Envio', 1)
+            ->distinct()
+            ->count('tv.ID');
+
+        $cantForosClase = (int) DB::table('clases_virtuales_actividades as cva')
+            ->join('tareas_virtuales as tv', 'cva.ID_Tarea', '=', 'tv.ID')
+            ->join('tareas_envios as te', function ($join) use ($studentId) {
+                $join->on('te.ID_Tarea', '=', 'tv.ID')
+                    ->where('te.ID_Destinatario', '=', $studentId)
+                    ->where('te.Envio', '=', 1);
+            })
+            ->where('cva.ID_Clase', (int) $classId)
+            ->where('cva.Visible', 1)
+            ->where('tv.Tipo', 2)
+            ->where('tv.Cerrada', 0)
+            ->where('tv.Envio', 1)
+            ->distinct()
+            ->count('tv.ID');
+
+        $lectura = DB::table('clases_virtuales_envios')
+            ->where('ID_Clase', (int) $classId)
+            ->where('ID_Destinatario', (int) $studentId)
+            ->where('Envio', 1)
+            ->orderBy('ID', 'desc')
+            ->first([
+                'Leido',
+                'Fecha_Leido',
+                'Hora_Leido',
+            ]);
+
+        $visibleClaseLabel = ((int) $clase->Estado === 1) ? 'Visible' : 'Oculta';
+
+        return [
+            'datos_generales' => [
+                'id_materia' => (int) $materiaId,
+                'tipo_materia' => strtoupper((string) $tipoMateria),
+                'materia' => $materiaLabel,
+                'id_clase' => (int) $classId,
+            ],
+            'detalle_clase' => [
+                'id_clase' => (int) $clase->ID,
+                'fecha' => !empty($clase->Fecha) ? Carbon::parse($clase->Fecha)->format('d/m/Y') : '',
+                'titulo' => (string) $clase->Titulo,
+                'descripcion' => (string) $clase->Guia_Ap,
+                'visible' => $visibleClaseLabel,
+                'id_visible' => (int) $clase->Estado,
+                'fecha_visualizacion' => (!empty($clase->Fecha_Publicacion) && $clase->Fecha_Publicacion !== '0000-00-00')
+                    ? Carbon::parse($clase->Fecha_Publicacion)->format('d/m/Y')
+                    : '',
+                'cantidades' => [
+                    'tareas' => (int) $cantTareasClase,
+                    'foros' => (int) $cantForosClase,
+                    'recursos' => (int) $cantRecursosClase,
+                ],
+                'mi_lectura' => [
+                    'leido' => (int) ($lectura->Leido ?? 0),
+                    'datos_lectura' => ((int) ($lectura->Leido ?? 0) === 1)
+                        ? (
+                            (!empty($lectura->Fecha_Leido) && $lectura->Fecha_Leido !== '0000-00-00'
+                                ? Carbon::parse($lectura->Fecha_Leido)->format('d/m/Y')
+                                : ''
+                            )
+                            . ' a las ' . (string) ($lectura->Hora_Leido ?? '')
+                        )
+                        : '',
+                ],
+            ],
+        ];
+    }
+
+    public function listarContenidosClaseAlumno($studentId, $materiaId, $tipoMateria, $classId, $institucionId, $cicloLectivo = null)
+    {
+        $alumno = Alumno::find($studentId);
+        if (!$alumno) {
+            return null;
+        }
+
+        $tipoMateria = strtolower(trim((string) $tipoMateria));
+        if (!in_array($tipoMateria, ['c', 'g'], true)) {
+            throw new \RuntimeException('Tipo de materia inválido.');
+        }
+
+        $ciclo = $this->resolveCicloAlumno($alumno, $cicloLectivo);
+        if (!$ciclo) {
+            return null;
+        }
+
+        $clase = $this->findClaseAlumno($studentId, $materiaId, $tipoMateria, $classId, (int) $ciclo->ID);
+        if (!$clase) {
+            return null;
+        }
+
+        $filesMeta = $this->resolveInstitutionFilesMeta((int) $institucionId);
+
+        $rows = DB::table('clases_virtuales_contenidos as cvc')
+            ->join('clases_virtuales_contenidos_tipos as cvct', 'cvc.ID_Tipo', '=', 'cvct.ID')
+            ->leftJoin('clases_virtuales_contenidos_lecturas as l', function ($join) use ($studentId) {
+                $join->on('cvc.ID', '=', 'l.ID_Contenido')
+                    ->where('l.ID_Alumno', '=', $studentId);
+            })
+            ->where('cvc.ID_Clase', (int) $classId)
+            ->where('cvc.ID_Materia', (int) $materiaId)
+            ->where('cvc.Tipo_Materia', (string) $tipoMateria)
+            ->where('cvc.Visible', 1)
+            ->where('cvc.Estado', '<=', 1)
+            ->orderBy('cvc.Orden', 'asc')
+            ->orderBy('cvc.ID', 'asc')
+            ->get([
+                'cvc.ID',
+                'cvc.ID_Tipo',
+                'cvc.Orden',
+                'cvc.Titulo',
+                'cvc.Descripcion',
+                'cvc.Enlace',
+                'cvc.Duracion',
+                'cvc.ID_Usuario',
+                'cvc.Fecha',
+                'cvc.Fecha_Vencimiento',
+                'cvc.Estado',
+                'cvc.Visible',
+                'cvc.Servidor',
+                'cvc.Archivo',
+                'cvc.Code',
+                'cvct.Tipo as NombreTipo',
+                'cvct.Enlace as TipoEsEnlace',
+                'l.ID as ID_Lectura',
+            ]);
+
+        $items = [];
+        foreach ($rows as $r) {
+            $archivo = trim((string) ($r->Archivo ?? ''));
+            $extension = strtolower(pathinfo($archivo, PATHINFO_EXTENSION));
+            $leido = !empty($r->ID_Lectura);
+
+            $tipoRecursoCodigo = 'archivo';
+            if ((int) ($r->TipoEsEnlace ?? 0) === 1 || !empty($r->Enlace)) {
+                $tipoRecursoCodigo = 'enlace';
+            } elseif (in_array($extension, ['pdf'], true)) {
+                $tipoRecursoCodigo = 'pdf';
+            } elseif (in_array($extension, ['mp4', 'avi', 'mov', 'wmv', 'webm'], true)) {
+                $tipoRecursoCodigo = 'video';
+            }
+
+            $items[] = [
+                'id_recurso' => (int) $r->ID,
+                'id_tipo_recurso' => (int) $r->ID_Tipo,
+                'tipo_recurso' => (string) ($r->NombreTipo ?? ''),
+                'tipo_recurso_codigo' => $tipoRecursoCodigo,
+                'orden' => (int) $r->Orden,
+                'titulo' => (string) $r->Titulo,
+                'descripcion' => (string) $r->Descripcion,
+                'enlace' => (string) ($r->Enlace ?? ''),
+                'duracion' => (int) ($r->Duracion ?? 0),
+                'id_usuario' => (int) ($r->ID_Usuario ?? 0),
+                'fecha' => !empty($r->Fecha) ? Carbon::parse($r->Fecha)->format('Y-m-d') : null,
+                'fecha_vencimiento' => (!empty($r->Fecha_Vencimiento) && $r->Fecha_Vencimiento !== '0000-00-00')
+                    ? Carbon::parse($r->Fecha_Vencimiento)->format('Y-m-d')
+                    : null,
+                'estado' => (int) ($r->Estado ?? 0),
+                'visible' => (int) ($r->Visible ?? 0),
+                'servidor' => (int) ($r->Servidor ?? 0),
+                'archivo' => $archivo,
+                'documento' => $archivo !== '' ? ($filesMeta['base_tasks_url'] . $archivo) : null,
+                'code' => (string) ($r->Code ?? ''),
+                'leido' => $leido,
+                'progreso' => $leido ? 100 : 0,
+            ];
+        }
+
+        return [
+            'id_materia' => (int) $materiaId,
+            'tipo_materia' => strtoupper((string) $tipoMateria),
+            'id_clase' => (int) $classId,
+            'contenidos' => $items,
+        ];
+    }
+
+    private function findClaseAlumno($studentId, $materiaId, $tipoMateria, $classId, $cicloId)
+    {
+        $hoy = Carbon::now('America/Argentina/Buenos_Aires')->format('Y-m-d');
+
+        return DB::table('clases_virtuales as cv')
+            ->join('clases_virtuales_envios as cve', function ($join) use ($studentId) {
+                $join->on('cve.ID_Clase', '=', 'cv.ID')
+                    ->where('cve.ID_Destinatario', '=', $studentId)
+                    ->where('cve.Envio', '=', 1);
+            })
+            ->where('cv.ID', (int) $classId)
+            ->where('cv.ID_Materia', (int) $materiaId)
+            ->where('cv.Tipo_Materia', (string) $tipoMateria)
+            ->where('cv.ID_Ciclo_Lectivo', (int) $cicloId)
+            ->where('cv.Estado', 1)
+            ->where(function ($q) use ($hoy) {
+                $q->whereNull('cv.Fecha_Publicacion')
+                    ->orWhere('cv.Fecha_Publicacion', '0000-00-00')
+                    ->orWhere('cv.Fecha_Publicacion', '<=', $hoy);
+            })
+            ->select(
+                'cv.ID',
+                'cv.Titulo',
+                'cv.Guia_Ap',
+                'cv.Estado',
+                'cv.Orden',
+                'cv.Fecha',
+                'cv.Fecha_Publicacion'
+            )
+            ->first();
+    }
+    private function resolveMateriaLabelAlumno($materiaId, $tipoMateria)
+    {
+        if ($tipoMateria === 'c') {
+            $row = DB::table('materias as mat')
+                ->join('cursos as cur', 'mat.ID_Curso', '=', 'cur.ID')
+                ->where('mat.ID', (int) $materiaId)
+                ->select('mat.Materia', 'cur.Cursos')
+                ->first();
+
+            if (!$row) {
+                throw new \RuntimeException('Materia no encontrada.');
+            }
+
+            return trim((string) $row->Materia) . ' (' . trim((string) $row->Cursos) . ')';
+        }
+
+        $row = DB::table('materias_grupales as mat')
+            ->where('mat.ID', (int) $materiaId)
+            ->select('mat.Materia')
+            ->first();
+
+        if (!$row) {
+            throw new \RuntimeException('Materia grupal no encontrada.');
+        }
+
+        return trim((string) $row->Materia);
+    }
+
     private function findForoAlumno($studentId, $forumId)
     {
         $hoy = Carbon::now('America/Argentina/Buenos_Aires')->format('Y-m-d');
