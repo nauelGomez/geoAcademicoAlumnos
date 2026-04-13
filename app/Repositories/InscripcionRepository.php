@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Exception;
 use Log;
+
 class InscripcionRepository
 {
     /**
@@ -65,55 +66,51 @@ class InscripcionRepository
     public function getMateriasDisponibles(int $institucionId, int $alumnoId)
     {
         $alumno = Alumno::with(['curso.plan'])->find($alumnoId);
-        if (!$alumno) throw new Exception("Alumno no encontrado.");
+        if (!$alumno) throw new Exception("No pudimos encontrar tus datos de alumno.");
 
         $cursoActual = $alumno->curso;
-        $cicloLectivo = DB::table('ciclo_lectivo')
-            ->where('ID_Nivel', $alumno->ID_Nivel)
-            ->where('Vigente', 'SI')->first();
-
+        $cicloLectivo = DB::table('ciclo_lectivo')->where('ID_Nivel', $alumno->ID_Nivel)->where('Vigente', 'SI')->first();
         $parametros = DB::table('nivel_parametros')->where('ID_Nivel', $alumno->ID_Nivel)->first();
-        $resultado = [];
+        
         $notasAlumno = DB::table('notas_cursada')->where('ID_Alumno', $alumnoId)->get();
+        $inscripcionesActuales = $cicloLectivo ? DB::table('grupos')
+            ->where('ID_Alumno', $alumnoId)
+            ->where('ID_Ciclo_Lectivo', $cicloLectivo->ID)
+            ->pluck('ID_Materia_Grupal')->toArray() : [];
 
-        // 1. Obtener inscripciones actuales
-        $gruposDelAlumno = [];
-        if ($cicloLectivo) {
-            $gruposDelAlumno = DB::table('grupos')
-                ->where('ID_Alumno', $alumnoId)
-                ->where('ID_Ciclo_Lectivo', $cicloLectivo->ID)
-                ->pluck('ID_Materia_Grupal')->toArray();
-        }
+        // 1. Calculamos el turno (Igual al legacy)
+        $turnoAlumno = $this->obtenerTurnoAlumno($alumno, $cicloLectivo);
 
-        // 2. Lógica de límites (OPTIMIZADA)
-        $limitesMatricula = $this->definirLimitesMatricula($institucionId, $alumnoId);
-        $cantidadInscriptas = count($gruposDelAlumno);
-        $inscDisponibles = max(0, $limitesMatricula['max'] - $cantidadInscriptas);
-        $limiteAlcanzado = ($cantidadInscriptas >= $limitesMatricula['max']);
+        // 2. Límites de inscripción
+        $limites = $this->definirLimitesMatricula($institucionId, $alumnoId);
+        $yaAnotadoCount = count($inscripcionesActuales);
+        $limiteAlcanzado = ($yaAnotadoCount >= $limites['max']);
 
-        // 3. Procesamiento de materias del plan
+        $resultado = [];
+
+        // 3. Recorremos el Plan de Estudios
         $cursosPlan = DB::table('planes_estudio_cursos')
             ->where('ID_Plan', $cursoActual->ID_Plan)
             ->where('Orden', '<=', $cursoActual->Orden_Plan)
             ->orderBy('Orden')->get();
 
         foreach ($cursosPlan as $cursoP) {
-            $materiasPlan = DB::table('materias_planes')
-                ->where('ID_Plan', $cursoActual->ID_Plan)
-                ->where('Curso', $cursoP->ID)
-                ->orderBy('Orden')->get();
+            $materiasPlan = DB::table('materias_planes')->where('ID_Plan', $cursoActual->ID_Plan)->where('Curso', $cursoP->ID)->get();
 
             foreach ($materiasPlan as $mPlan) {
-                $queryMat = DB::table('materias')->where('ID_Materia_Plan', $mPlan->ID);
-                if (Schema::hasColumn('materias', 'Turno') && !empty($cursoActual->Turno)) {
-                    $queryMat->where('Turno', $cursoActual->Turno);
+                // Buscamos las instancias (materias)
+                $instancias = DB::table('materias')->where('ID_Materia_Plan', $mPlan->ID);
+                if ($cursoActual->Orden_Plan == $cursoP->Orden) {
+                    $instancias->where('ID_Curso', $cursoActual->ID);
                 }
-                $instancias = $queryMat->get();
+                $instancias = $instancias->get();
 
                 foreach ($instancias as $instancia) {
-                    if ($notasAlumno->where('ID_Materia', $instancia->ID)->filter(function ($n) {
-                        return $n->Final == 'SI' || $n->Cursada == 1;
-                    })->isNotEmpty()) continue;
+                    // ¿Ya la aprobó o la está cursando?
+                    $yaAprobada = $notasAlumno->where('ID_Materia', $instancia->ID)
+                        ->filter(function($n){ return $n->Final == 'SI' || $n->Cursada == 1; })->isNotEmpty();
+                    
+                    if ($yaAprobada) continue; // Si ya la hizo, no tiene sentido mostrarla
 
                     $grupos = DB::table('materias_grupales')
                         ->where('ID_Ciclo_Lectivo', optional($cicloLectivo)->ID)
@@ -121,41 +118,55 @@ class InscripcionRepository
                         ->where('AI', 'SI')->get();
 
                     foreach ($grupos as $grupo) {
-                        $yaInscriptoEnEsteGrupo = in_array($grupo->ID, $gruposDelAlumno);
-                        $restantes = (int)$grupo->Cupo - (int)$grupo->Alumnos;
-                        $hayLugar = ((int)$grupo->Cupo == 0 || $restantes > 0);
-                        $eval = $this->validarCorrelativasLegacy($mPlan->ID, $alumnoId);
+                        $motivos = []; // Aquí guardaremos las razones para "Dummies"
+                        
+                        // REGLA: ¿Está anotado ya?
+                        $inscripto = in_array($grupo->ID, $inscripcionesActuales);
 
-                        $estado = 'DISPONIBLE';
-                        $puedeInscribirse = false;
-                        $permiteBaja = false;
-                        $motivosBloqueo = '';
-
-                        if ($yaInscriptoEnEsteGrupo) {
-                            $estado = 'INSCRIPTO';
-                            $permiteBaja = (optional($parametros)->HabAI == 1);
-                            $motivosBloqueo = 'Ya te encontrás inscripto en este grupo.';
-                        } else {
-                            if ($limiteAlcanzado) {
-                                $estado = 'BLOQUEADA';
-                                $motivosBloqueo = "Límite de matrícula alcanzado ({$limitesMatricula['max']}).";
-                            } else {
-                                $puedeInscribirse = ($eval['autorizado'] && $hayLugar && optional($parametros)->HabAI == 1 && $alumno->ID_Situacion == 2);
-                                $estado = $puedeInscribirse ? 'DISPONIBLE' : 'BLOQUEADA';
-                                $motivosBloqueo = $eval['autorizado'] ? ($hayLugar ? "" : "Cupo completo") : $eval['causal'];
-                            }
+                        // REGLA: Correlativas (Corregido a tabla _cursada según legacy)
+                        $evalCorr = $this->validarCorrelativasFriendly($mPlan->ID, $alumnoId);
+                        if (!$evalCorr['autorizado']) {
+                            $motivos[] = $evalCorr['mensaje'];
                         }
+
+                        // REGLA: Turno
+                        if (!empty($turnoAlumno) && $turnoAlumno !== $grupo->Turno) {
+                            $t = ['M' => 'Mañana', 'T' => 'Tarde', 'N' => 'Noche'][$grupo->Turno] ?? 'otro turno';
+                            $motivos[] = "Este grupo es del turno $t y vos pertenecés a otro turno.";
+                        }
+
+                        // REGLA: Cupo
+                        $restantes = (int)$grupo->Cupo - (int)$grupo->Alumnos;
+                        if ($grupo->Cupo > 0 && $restantes <= 0) {
+                            $motivos[] = "¡Llegaste tarde! El grupo ya está lleno.";
+                        }
+
+                        // REGLA: Límite de materias
+                        if ($limiteAlcanzado && !$inscripto) {
+                            $motivos[] = "Ya te anotaste a " . $limites['max'] . " materias, no podés sumar más.";
+                        }
+
+                        // REGLA: Período cerrado
+                        if (optional($parametros)->HabAI != 1) {
+                            $motivos[] = "El período de inscripciones no está abierto ahora.";
+                        }
+
+                        // REGLA: Situación del alumno
+                        if ($alumno->ID_Situacion != 2) {
+                            $motivos[] = "Tu estado actual como alumno no te permite anotarte a materias.";
+                        }
+
+                        $puedeInscribirse = (count($motivos) === 0 && !$inscripto);
 
                         $resultado[] = [
                             'id_materia_grupal' => $grupo->ID,
                             'materia' => trim($grupo->Materia),
-                            'docente' => DB::table('personal')->where('ID', $grupo->ID_Personal)->value('Apellido') ?: 'A Designar',
-                            'cupo_disponible' => ((int)$grupo->Cupo == 0) ? "Lugares Disponibles" : ($restantes > 0 ? "$restantes lugares" : "Grupo Completo"),
-                            'estado' => $estado,
+                            'docente' => DB::table('personal')->where('ID', $grupo->ID_Personal)->value('Apellido') ?? 'A designar',
+                            'cupo_disponible' => ($grupo->Cupo == 0) ? "Hay lugar" : ($restantes > 0 ? "$restantes lugares" : "Lleno"),
+                            'estado' => $inscripto ? 'INSCRIPTO' : ($puedeInscribirse ? 'DISPONIBLE' : 'BLOQUEADA'),
                             'permite_inscripcion' => $puedeInscribirse,
-                            'permite_baja' => $permiteBaja,
-                            'motivos_bloqueo' => $motivosBloqueo,
-                            'permite_excepcion' => !$eval['autorizado'] && (optional($parametros)->HabSE == 1) && !$yaInscriptoEnEsteGrupo
+                            'motivos_bloqueo' => $inscripto ? "Ya estás anotado acá." : implode(' ', $motivos),
+                            'permite_excepcion' => !$evalCorr['autorizado'] && optional($parametros)->HabSE == 1 && !$inscripto
                         ];
                     }
                 }
@@ -164,12 +175,49 @@ class InscripcionRepository
 
         return [
             'status' => 'success',
-            'insc_disponibles' => $inscDisponibles,
+            'insc_disponibles' => max(0, $limites['max'] - $yaAnotadoCount),
             'data' => [
-                'plan' => optional($alumno->curso->plan)->Nombre ?? 'Sin Plan',
-                'disponibles' => array_values($resultado),
+                'plan' => optional($cursoActual->plan)->Nombre ?? 'Tu Plan',
+                'disponibles' => array_values($resultado)
             ]
         ];
+    }
+
+    private function validarCorrelativasFriendly(int $materiaPlanId, int $alumnoId)
+    {
+        $correlativas = DB::table('planes_estudio_correlativas_cursada')
+            ->where('ID_Materia', $materiaPlanId)->where('B', 0)->get();
+
+        foreach ($correlativas as $c) {
+            $instanciasCorr = DB::table('materias')->where('ID_Materia_Plan', $c->ID_Materia_C)->pluck('ID')->toArray();
+            $tipoReq = ($c->Tipo == 1) ? "cursada" : "final aprobado";
+            
+            $cumple = DB::table('notas_cursada')->where('ID_Alumno', $alumnoId)
+                ->whereIn('ID_Materia', $instanciasCorr)
+                ->where(function($q) use ($c) {
+                    if ($c->Tipo == 1) $q->where('Cursada', 1);
+                    else $q->where('Final', 'SI');
+                })->exists();
+
+            if (!$cumple) {
+                $nomMateria = DB::table('materias_planes')->where('ID', $c->ID_Materia_C)->value('Materia');
+                return [
+                    'autorizado' => false, 
+                    'mensaje' => "Te falta tener la $tipoReq de $nomMateria."
+                ];
+            }
+        }
+        return ['autorizado' => true, 'mensaje' => ''];
+    }
+
+    private function obtenerTurnoAlumno($alumno, $ciclo)
+    {
+        if (!empty($alumno->Turno)) return $alumno->Turno;
+        return DB::table('grupos as g')
+            ->join('materias_grupales as mg', 'g.ID_Materia_Grupal', '=', 'mg.ID')
+            ->where('g.ID_Alumno', $alumno->ID)
+            ->where('g.ID_Ciclo_Lectivo', '<', 4)
+            ->orderBy('g.ID', 'desc')->value('mg.Turno');
     }
 
     public function inscribir(int $institucionId, int $alumnoId, int $idMateriaGrupal)
@@ -262,7 +310,44 @@ class InscripcionRepository
         }
         return ['autorizado' => true, 'causal' => ''];
     }
+    private function validarCorrelativasCursada(int $idMateriaPlan, int $alumnoId)
+    {
+        $correlativas = DB::table('planes_estudio_correlativas_cursada')
+            ->where('ID_Materia', $idMateriaPlan)
+            ->where('B', 0)
+            ->get();
 
+        if ($correlativas->isEmpty()) {
+            return ['autorizado' => true, 'causal' => ''];
+        }
+
+        foreach ($correlativas as $corr) {
+            $instanciasCorr = DB::table('materias')->where('ID_Materia_Plan', $corr->ID_Materia_C)->pluck('ID')->toArray();
+
+            if (empty($instanciasCorr)) {
+                continue; // Evita error en whereIn vacíos en Laravel 5.5
+            }
+
+            $cumple = DB::table('notas_cursada')
+                ->where('ID_Alumno', $alumnoId)
+                ->whereIn('ID_Materia', $instanciasCorr)
+                ->where(function ($q) use ($corr) {
+                    if ($corr->Tipo == 1) {
+                        $q->where('Cursada', 1);
+                    } else {
+                        $q->where('Final', 'SI');
+                    }
+                })->exists();
+
+            if (!$cumple) {
+                $nombreM = DB::table('materias_planes')->where('ID', $corr->ID_Materia_C)->value('Materia');
+                $tipo = ($corr->Tipo == 1) ? "Cursada" : "Final";
+                return ['autorizado' => false, 'causal' => "Cursada bloqueada por ausencia de $tipo de $nombreM"];
+            }
+        }
+
+        return ['autorizado' => true, 'causal' => ''];
+    }
 
     public function darDeBaja(int $alumnoId, int $idMateriaGrupal)
     {
