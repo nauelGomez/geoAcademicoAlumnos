@@ -90,6 +90,21 @@ Route::prefix('institutions')->group(function () {
 */
 Route::middleware(['tenant'])->group(function () {
 
+    // --- Mensajería / Messaging ---
+    Route::prefix('messages')->group(function () {
+        // Listado de conversaciones por alumno
+        Route::get('/conversations/{studentId}', ide_route([MessageController::class, 'index']));
+        
+        // Obtener destinatarios habilitados (Docentes, Grupos, Materias Grupales)
+        Route::get('/recipients/{studentId}', ide_route([MessageController::class, 'recipients']));
+        
+        // Ver detalle de un chat (Marca como leído automáticamente)
+        Route::get('/chat/{codigo}', ide_route([MessageController::class, 'show']));
+        
+        // Iniciar conversación o responder (Maneja lógica de niveles 1/3 y preceptores)
+        Route::post('/send', ide_route([MessageController::class, 'store']));
+    });
+    
     // --- Alumnos ---
     Route::prefix('alumnos')->group(function () {
         Route::get('/', ide_route([AlumnoController::class, 'index']));
@@ -193,12 +208,12 @@ Route::middleware(['tenant'])->group(function () {
         Route::put('/student/{studentId}', ide_route([ProfileController::class, 'update']));
     });
 
-    Route::prefix('messages')->group(function () {
-        Route::get('/student/{studentId}/recipients', ide_route([MessageController::class, 'create']));
-        Route::get('/student/{studentId}/chat/{codigo}', ide_route([MessageController::class, 'show']));
-        Route::post('/student/{studentId}', ide_route([MessageController::class, 'store']));
-        Route::post('/student/{studentId}/chat/{codigo}', ide_route([MessageController::class, 'reply']));
-    });
+    // Route::prefix('messages')->group(function () {
+    //     Route::get('/student/{studentId}/recipients', ide_route([MessageController::class, 'create']));
+    //     Route::get('/student/{studentId}/chat/{codigo}', ide_route([MessageController::class, 'show']));
+    //     Route::post('/student/{studentId}', ide_route([MessageController::class, 'store']));
+    //     Route::post('/student/{studentId}/chat/{codigo}', ide_route([MessageController::class, 'reply']));
+    // });
 
     /*
     |--------------------------------------------------------------------------
@@ -265,9 +280,9 @@ Route::middleware(['tenant'])->group(function () {
         Route::post('/profile/student/{studentId}/photo', ide_route([FamilyProfileController::class, 'updatePhoto']));
 
         // MENSAJERÍA BIDIRECCIONAL
-        Route::get('/messaging/student/{studentId}', ide_route([MessagingController::class, 'index']));
-        Route::get('/messaging/chat/{code}', ide_route([MessagingController::class, 'show']));
-        Route::get('/messaging/recipients/student/{studentId}', ide_route([MessagingController::class, 'recipients']));
-        Route::post('/messaging/send', ide_route([MessagingController::class, 'store']));
+        // Route::get('/messaging/student/{studentId}', ide_route([MessagingController::class, 'index']));
+        // Route::get('/messaging/chat/{code}', ide_route([MessagingController::class, 'show']));
+        // Route::get('/messaging/recipients/student/{studentId}', ide_route([MessagingController::class, 'recipients']));
+        // Route::post('/messaging/send', ide_route([MessagingController::class, 'store']));
     });
 });

@@ -1,5 +1,4 @@
 <?php
-
 namespace App\Repositories;
 
 use App\Models\Alumno;
@@ -10,249 +9,194 @@ use Illuminate\Support\Str;
 
 class MessageRepository
 {
-    public function getConversations($studentId, $familiaId = null)
+    /**
+     * Obtener destinatarios disponibles respetando materias grupales y preceptores
+     */
+    public function getAvailableRecipients($studentId)
     {
-        $query = ChatConversation::where('ID_Alumno', $studentId);
+        $alumno = Alumno::findOrFail($studentId);
+        $recipients = collect();
 
-        if ($familiaId) {
-            $query->where('ID_Familia', $familiaId);
+        // 1. Grupos Institucionales (DI, PR, EQ)
+        $grupos = DB::table('chat_grupos')
+            ->where('ID_Nivel', $alumno->ID_Nivel)
+            ->whereIn('Referencia', ['DI', 'PR', 'EQ'])
+            ->get(['ID', 'Nombre', 'Referencia']);
+
+        foreach ($grupos as $g) {
+            $recipients->push(['id' => $g->ID, 'nombre' => $g->Nombre, 'tipo' => 'GRUPO']);
         }
 
-        $conversaciones = $query->get();
-        $resultado = [];
+        // 2. Docentes de Materias Normales (Titulares y Adjuntos)
+        $docentesMat = DB::table('materias as m')
+            ->join('personal as p', function($join) {
+                $join->on('m.ID_Personal', '=', 'p.ID')
+                     ->orOn('m.ID_Adjunto', '=', 'p.ID');
+            })
+            ->where('m.ID_Curso', $alumno->ID_Curso)
+            ->where('m.Mensajeria', 1)
+            ->where('p.Estado', 'H')
+            ->select('p.ID', 'p.Apellido', 'p.Nombre', 'm.Materia')
+            ->get();
 
-        foreach ($conversaciones as $conv) {
+        foreach ($docentesMat as $d) {
+            $recipients->push([
+                'id' => $d->ID, 
+                'nombre' => "Prof. {$d->Apellido}, {$d->Nombre} ({$d->Materia})", 
+                'tipo' => 'DOCENTE'
+            ]);
+        }
+
+        // 3. Materias Grupales (Lógica Legacy líneas 173-201)
+        $docentesGrupales = DB::table('materias_grupales as mg')
+            ->join('grupos as g', 'g.ID_Materia_Grupal', '=', 'mg.ID')
+            ->join('personal as p', function($join) {
+                $join->on('mg.ID_Personal', '=', 'p.ID')
+                     ->orOn('mg.ID_Adjunto', '=', 'p.ID');
+            })
+            ->where('g.ID_Alumno', $studentId)
+            ->where('mg.Estado', 0)
+            ->where('p.Estado', 'H')
+            ->select('p.ID', 'p.Apellido', 'p.Nombre', 'mg.Materia')
+            ->get();
+
+        foreach ($docentesGrupales as $dg) {
+            $recipients->push([
+                'id' => $dg->ID, 
+                'nombre' => "Prof. {$dg->Apellido}, {$dg->Nombre} ({$dg->Materia})", 
+                'tipo' => 'DOCENTE'
+            ]);
+        }
+
+        return $recipients->unique('id')->values();
+    }
+
+    /**
+     * Enviar mensaje con lógica de duplicación para Niveles 1 y 3
+     */
+    public function sendMessage(array $data)
+    {
+        return DB::transaction(function () use ($data) {
+            $alumno = Alumno::findOrFail($data['id_alumno']);
+            $fecha = date('Y-m-d');
+            $hora = date('H:i:s');
+
+            // Determinar Supervisión (Columna P)
+            $supervision = DB::table('nivel_parametros')
+                ->where('ID_Nivel', $alumno->ID_Nivel)
+                ->value('Supervision_Mensajeria');
+            $publico = ($supervision == 1) ? 0 : 1;
+
+            // Obtener o Crear Conversación (Header)
+            $conv = ChatConversation::firstOrCreate(
+                [
+                    'ID_Docente' => $data['id_destinatario'],
+                    'ID_Familia' => $data['id_familia'],
+                    'ID_Alumno'  => $data['id_alumno']
+                ],
+                [
+                    'Codigo' => Str::random(10),
+                    'Fecha'  => $fecha,
+                    'Hora'   => $hora
+                ]
+            );
+
+            // Actualizamos fecha de cabecera para que suba en la lista
+            $conv->update(['Fecha' => $fecha, 'Hora' => $hora]);
+
+            // Lógica de envío múltiple (Preceptores)
+            $destinatarios = [$data['id_destinatario']];
+            
+            $grupo = DB::table('chat_grupos')->where('ID', $data['id_destinatario'])->first();
+            
+            // Si el destino es el grupo de Preceptoría (PR) o es Nivel 1/3 (Regla legacy 472)
+            if (($grupo && $grupo->Referencia == 'PR') || in_array($alumno->ID_Nivel, [1, 3])) {
+                $curso = DB::table('cursos')->where('ID', $alumno->ID_Curso)->first();
+                if ($curso) {
+                    $preceptores = array_filter([$curso->ID_Preceptor, $curso->ID_Pareja, $curso->ID_Pareja2]);
+                    $destinatarios = array_unique(array_merge($destinatarios, $preceptores));
+                }
+            }
+
+            foreach ($destinatarios as $destId) {
+                ChatMessage::create([
+                    'Fecha' => $fecha,
+                    'Hora' => $hora,
+                    'ID_Remitente' => $data['id_familia'],
+                    'Tipo_Remitente' => 2, // Familia
+                    'ID_Destinatario' => $destId,
+                    'Tipo_Destinatario' => 1, // Personal
+                    'Mensaje' => $data['mensaje'],
+                    'Codigo' => $conv->Codigo,
+                    'ID_Alumno' => $alumno->ID,
+                    'ID_Nivel' => $alumno->ID_Nivel,
+                    'P' => $publico,
+                    'Leido' => 0
+                ]);
+            }
+
+            return $conv->Codigo;
+        });
+    }
+    /**
+     * Obtener listado de conversaciones (Bandeja de entrada)
+     */
+    public function getConversations($studentId, $familiaId)
+    {
+        $conversaciones = ChatConversation::where('ID_Alumno', $studentId)
+            ->where('ID_Familia', $familiaId)
+            ->orderBy('Fecha', 'desc')
+            ->orderBy('Hora', 'desc')
+            ->get();
+
+        return $conversaciones->map(function ($conv) use ($familiaId) {
             $ultimoMensaje = DB::table('chat')
                 ->where('Codigo', $conv->Codigo)
                 ->orderBy('ID', 'desc')
                 ->first();
 
-            if (!$ultimoMensaje) {
-                continue;
-            }
+            if (!$ultimoMensaje) return null;
 
-            $querySinLeer = DB::table('chat')
+            // Contar no leídos para la familia (Tipo_Destinatario = 2)
+            $sinLeer = DB::table('chat')
                 ->where('Codigo', $conv->Codigo)
+                ->where('ID_Destinatario', $familiaId)
                 ->where('Tipo_Destinatario', 2)
-                ->where('Leido', 0);
+                ->where('Leido', 0)
+                ->count();
 
-            if ($familiaId) {
-                $querySinLeer->where('ID_Destinatario', $familiaId);
-            }
-
-            $sinLeer = $querySinLeer->count();
-
+            // Resolver nombre del destinatario (Legacy chat_grupos o personal)
             $nombreDocente = 'Desconocido';
             $grupo = DB::table('chat_grupos')->where('ID', $conv->ID_Docente)->first();
-
             if ($grupo) {
                 $nombreDocente = $grupo->Nombre;
             } else {
                 $profe = DB::table('personal')->where('ID', $conv->ID_Docente)->first();
-                if ($profe) {
-                    $nombreDocente = "Prof. {$profe->Apellido}, {$profe->Nombre}";
-                }
+                if ($profe) $nombreDocente = "Prof. {$profe->Apellido}, {$profe->Nombre}";
             }
 
-            $resultado[] = [
+            return [
                 'codigo' => $conv->Codigo,
                 'docente' => $nombreDocente,
                 'ultimo_mensaje' => $ultimoMensaje->Mensaje,
-                'fecha_raw' => $ultimoMensaje->Fecha . ' ' . $ultimoMensaje->Hora,
                 'fecha_um' => date('d/m/Y', strtotime($ultimoMensaje->Fecha)),
                 'hora_um' => $ultimoMensaje->Hora,
-                'sin_leer' => $sinLeer,
-                'id_familia' => $conv->ID_Familia,
+                'sin_leer' => $sinLeer
             ];
-        }
-
-        usort($resultado, function ($a, $b) {
-            return strtotime($b['fecha_raw']) - strtotime($a['fecha_raw']);
-        });
-
-        return array_map(function ($item) {
-            unset($item['fecha_raw']);
-            return $item;
-        }, $resultado);
+        })->filter()->values();
     }
 
-    public function getAvailableRecipients($studentId)
-    {
-        $alumno = Alumno::findOrFail($studentId);
-        $destinatarios = [];
-
-        $grupos = DB::table('chat_grupos')->where('ID_Nivel', $alumno->ID_Nivel)->get();
-
-        foreach ($grupos as $grupo) {
-            $ref = $grupo->Referencia;
-
-            if (in_array($ref, ['DI', 'PR', 'EQ'])) {
-                $destinatarios[] = ['id' => $grupo->ID, 'nombre' => $grupo->Nombre, 'tipo' => 'grupo'];
-            }
-
-            if ($ref == 'PF') {
-                $materias = DB::table('materias')
-                    ->join('personal', function ($join) {
-                        $join->on('materias.ID_Personal', '=', 'personal.ID')
-                            ->orOn('materias.ID_Adjunto', '=', 'personal.ID');
-                    })
-                    ->where('materias.ID_Curso', $alumno->ID_Curso)
-                    ->where('materias.Mensajeria', 1)
-                    ->where('personal.Estado', 'H')
-                    ->select('personal.ID', 'personal.Apellido', 'personal.Nombre', 'materias.Materia')
-                    ->get();
-
-                foreach ($materias as $mat) {
-                    $destinatarios[] = [
-                        'id' => $mat->ID,
-                        'nombre' => "Prof. {$mat->Apellido}, {$mat->Nombre} ({$mat->Materia})",
-                        'tipo' => 'docente',
-                    ];
-                }
-            }
-
-            if (in_array($ref, ['MG', 'MI'])) {
-                $cursoInfo = DB::table('cursos')->where('ID', $alumno->ID_Curso)->first();
-                if ($cursoInfo) {
-                    $idsPreceptores = array_filter([$cursoInfo->ID_Preceptor, $cursoInfo->ID_Pareja, $cursoInfo->ID_Pareja2]);
-
-                    if (!empty($idsPreceptores)) {
-                        $preceptores = DB::table('personal')
-                            ->whereIn('ID', $idsPreceptores)
-                            ->where('Estado', 'H')
-                            ->get();
-
-                        foreach ($preceptores as $prec) {
-                            $destinatarios[] = [
-                                'id' => $prec->ID,
-                                'nombre' => "Prof. {$prec->Apellido}, {$prec->Nombre}",
-                                'tipo' => 'docente',
-                            ];
-                        }
-                    }
-                }
-            }
-        }
-
-        return collect($destinatarios)->unique('id')->values()->all();
-    }
-
-    public function getChatDetails($codigo, $studentId, $familiaId)
-    {
-        ChatMessage::where('Codigo', $codigo)
-            ->where('ID_Destinatario', $familiaId)
-            ->where('Tipo_Destinatario', 2)
-            ->where('Leido', 0)
-            ->update([
-                'Leido' => 1,
-                'Fecha_Leido' => date('Y-m-d'),
-                'Hora_Leido' => date('H:i:s'),
-            ]);
-
-        $conv = ChatConversation::where('Codigo', $codigo)->first();
-        $nombreProfesor = 'Desconocido';
-        $foto = 'usuario.png';
-
-        if ($conv) {
-            $grupo = DB::table('chat_grupos')->where('ID', $conv->ID_Docente)->first();
-            if ($grupo) {
-                $nombreProfesor = $grupo->Nombre;
-            } else {
-                $profe = DB::table('personal')->where('ID', $conv->ID_Docente)->first();
-                if ($profe) {
-                    $nombreProfesor = "Prof. {$profe->Apellido}, {$profe->Nombre}";
-                    $foto = $profe->PIC ?: 'usuario.png';
-                }
-            }
-        }
-
-        $mensajes = ChatMessage::where('Codigo', $codigo)
-            ->orderBy('ID', 'asc')
-            ->get()
-            ->map(function ($msj) use ($familiaId) {
-                $enviadoPorMi = ($msj->ID_Remitente == $familiaId && $msj->Tipo_Remitente == 2);
-
-                return [
-                    'id' => $msj->ID,
-                    'mensaje' => $msj->Mensaje,
-                    'fecha' => date('d/m/Y', strtotime($msj->Fecha)),
-                    'hora' => $msj->Hora,
-                    'enviado_por_mi' => $enviadoPorMi,
-                ];
-            });
-
-        return [
-            'codigo' => $codigo,
-            'profesor' => $nombreProfesor,
-            'foto_profesor' => "https://geoeducacion.com.ar/geo/imagenes/usuarios/{$foto}",
-            'mensajes' => $mensajes,
-        ];
-    }
-
-    public function startConversation($studentId, $familiaId, $data)
-    {
-        $destinatarioId = $data['destinatario'];
-        $texto = trim($data['mensaje']);
-        $hoy = date('Y-m-d');
-        $ahora = date('H:i:s');
-
-        $conv = ChatConversation::where('ID_Familia', $familiaId)
-            ->where('ID_Alumno', $studentId)
-            ->where('ID_Docente', $destinatarioId)
-            ->first();
-
-        if (!$conv) {
-            $codigo = Str::random(10);
-
-            $conv = ChatConversation::create([
-                'Codigo' => $codigo,
-                'ID_Familia' => $familiaId,
-                'ID_Alumno' => $studentId,
-                'ID_Docente' => $destinatarioId,
-                'Fecha' => $hoy,
-                'Hora' => $ahora,
-            ]);
-        } else {
-            $codigo = $conv->Codigo;
-            $conv->update(['Fecha' => $hoy, 'Hora' => $ahora]);
-        }
-
-        $mensaje = ChatMessage::create([
-            'Codigo' => $codigo,
-            'Mensaje' => $texto,
-            'Fecha' => $hoy,
-            'Hora' => $ahora,
-            'ID_Remitente' => $familiaId,
-            'Tipo_Remitente' => 2,
-            'ID_Destinatario' => $destinatarioId,
-            'Tipo_Destinatario' => 1,
-            'Leido' => 0,
-        ]);
-
-        return ['codigo' => $codigo, 'mensaje' => $mensaje];
-    }
-
-    public function replyMessage($codigo, $studentId, $familiaId, $data)
-    {
-        $texto = trim($data['mensaje']);
-        $hoy = date('Y-m-d');
-        $ahora = date('H:i:s');
-
-        $conv = ChatConversation::where('Codigo', $codigo)->firstOrFail();
-        $conv->update(['Fecha' => $hoy, 'Hora' => $ahora]);
-
-        $mensaje = ChatMessage::create([
-            'Codigo' => $codigo,
-            'Mensaje' => $texto,
-            'Fecha' => $hoy,
-            'Hora' => $ahora,
-            'ID_Remitente' => $familiaId,
-            'Tipo_Remitente' => 2,
-            'ID_Destinatario' => $conv->ID_Docente,
-            'Tipo_Destinatario' => 1,
-            'Leido' => 0,
-        ]);
-
-        return $mensaje;
-    }
+/**
+ * Busca el ID de familia asociado a un alumno en la DB General
+ * validando que pertenezca a la institución activa.
+ */
+public function getFamilyIdFromAsociacion($studentId, $institutionId)
+{
+    return DB::connection('mysql_gral')
+        ->table('asociaciones')
+        ->where('ID_Alumno', $studentId)
+        ->where('ID_Institucion', $institutionId) // Filtro crítico según tu imagen
+        ->where('Estado', 1) // Opcional: solo asociaciones activas
+        ->value('ID_Familia');
+}
 }
