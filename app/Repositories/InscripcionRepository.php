@@ -5,7 +5,7 @@ namespace App\Repositories;
 use App\Models\Alumno;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Schema; // <-- 1. IMPORTANTE: Agregamos el Facade Schema
+use Illuminate\Support\Facades\Schema; // <-- Facade Schema mantenido
 use Exception;
 
 class InscripcionRepository
@@ -37,10 +37,10 @@ class InscripcionRepository
                 if (!empty($json['data']) && is_array($json['data'])) {
                     foreach ($json['data'] as $data) {
                         if (isset($data['id'])) {
-                            // Extraemos estrictamente min_mat y max_mat
+                            // CORRECCIÓN: Si max_mat viene en 0, lo transformamos en 999 (Ilimitado)
                             $res['limites'][(int) $data['id']] = [
                                 'min' => isset($data['min_mat']) ? (int) $data['min_mat'] : 0,
-                                'max' => isset($data['max_mat']) ? (int) $data['max_mat'] : 999,
+                                'max' => (isset($data['max_mat']) && (int) $data['max_mat'] > 0) ? (int) $data['max_mat'] : 999,
                                 'nombre_original' => $data['nombre'] ?? '',
                                 'nombre_display' => trim(explode(':', mb_convert_encoding($data['nombre'] ?? '', 'UTF-8', 'UTF-8'))[0])
                             ];
@@ -64,14 +64,12 @@ class InscripcionRepository
      */
     private function buscarLimitesDelPlan($plan, $limitesExternos)
     {
-        // 1. Intento por ID 
         $idAComparar = $plan->ID; 
 
         if (isset($limitesExternos[$idAComparar])) {
             return $limitesExternos[$idAComparar];
         }
 
-        // 2. Fallback agresivo: Quitamos vocales, espacios, comas y el "?" corrupto para forzar match de consonantes
         $limpiarString = function($str) {
             $str = mb_strtolower(trim($str), 'UTF-8');
             $str = str_replace(['á', 'é', 'í', 'ó', 'ú', 'ü', 'ñ'], ['a', 'e', 'i', 'o', 'u', 'u', 'n'], $str);
@@ -84,14 +82,13 @@ class InscripcionRepository
             foreach ($limitesExternos as $idApi => $lim) {
                 $nombreApiLimpio = $limpiarString($lim['nombre_original']);
                 
-                // Si la raíz de texto "prfsrdntlg" está contenida
                 if (strpos($nombreApiLimpio, $nombrePlanLimpio) !== false || strpos($nombrePlanLimpio, $nombreApiLimpio) !== false) {
                     return $lim;
                 }
             }
         }
 
-        return null; // No hay límites detectados para este plan (se asume ilimitado)
+        return null; 
     }
 
     public function getMateriasDisponibles(int $institucionId, int $alumnoId)
@@ -102,47 +99,38 @@ class InscripcionRepository
         $ciclo = DB::table('ciclo_lectivo')->where('ID_Nivel', $alumno->ID_Nivel)->where('Vigente', 'SI')->first();
         if (!$ciclo) throw new Exception("No hay ciclo lectivo vigente configurado.");
 
-       // Obtenemos límites para TODAS las instituciones
         $apiData = $this->obtenerLimitesExternos($institucionId, $alumnoId);
         $limitesExternos = $apiData['limites'];
         $apiFallida = $apiData['fallida'];
 
-        // --- INICIO MODIFICACIÓN (GRACEFUL DEGRADATION) ---
         $cursosInscriptos = [];
 
-        // 2. Comprobamos si la tabla existe antes de consultarla
         if (Schema::hasTable('inscripciones')) {
             $cursosInscriptos = DB::table('inscripciones')
                 ->where('ID_Alumno', $alumnoId)
-                ->where('Estado', 1) // Asumimos 1 como activo/vigente
+                ->where('Estado', 1) 
                 ->pluck('ID_Curso')
                 ->toArray();
         }
-        // Si no existe, $cursosInscriptos queda como un array vacío y el sistema no colapsa.
 
-        // Asegurar que el curso principal de la tabla alumnos esté incluido
         if ($alumno->ID_Curso && !in_array($alumno->ID_Curso, $cursosInscriptos)) {
             $cursosInscriptos[] = $alumno->ID_Curso;
         }
 
         $planesIds = [];
         
-        // Mapear esos cursos a sus planes correspondientes
         if (!empty($cursosInscriptos)) {
             $cursosInfo = DB::table('planes_estudio_cursos')->whereIn('ID', $cursosInscriptos)->get();
             foreach ($cursosInfo as $cInfo) {
-                // Si está inscripto en varios cursos del mismo plan, conservamos el de mayor orden
                 if (!isset($planesIds[$cInfo->ID_Plan]) || $cInfo->Orden > $planesIds[$cInfo->ID_Plan]) {
                     $planesIds[$cInfo->ID_Plan] = $cInfo->Orden;
                 }
             }
         }
-        // --- FIN MODIFICACIÓN ---
 
         $inscripcionesCiclo = $this->getInscripcionesActuales($alumnoId, $ciclo);
         $idsGruposInscriptos = $inscripcionesCiclo->pluck('ID_Materia_Grupal')->toArray();
 
-        // 2. Otros planes donde ya tenga inscripciones previas en este ciclo
         foreach ($inscripcionesCiclo as $insc) {
             if (!isset($planesIds[$insc->ID_Plan])) {
                 $planesIds[$insc->ID_Plan] = 999; 
@@ -170,14 +158,16 @@ class InscripcionRepository
                 $limitesAsignados = $this->buscarLimitesDelPlan($plan, $limitesExternos);
                 
                 if ($limitesAsignados) {
-                    $tieneLimite = true;
-                    $limiteMinPermitido = $limitesAsignados['min']; 
-                    $limiteMaxPermitido = $limitesAsignados['max']; 
+                    // CORRECCIÓN: Nos aseguramos de que si llega un 0 loco por acá, se trate como 999.
+                    $limiteMinPermitido = (int) $limitesAsignados['min']; 
+                    $limiteMaxPermitido = ((int) $limitesAsignados['max'] > 0) ? (int) $limitesAsignados['max'] : 999; 
+                    
+                    // Si el máximo es 999 y el mínimo es 0, técnicamente NO TIENE límites.
+                    $tieneLimite = ($limiteMaxPermitido != 999 || $limiteMinPermitido > 0);
                     
                     $nombreDisplay = str_replace('?', 'í', $limitesAsignados['nombre_display']);
                     $actividadNombre = !empty($nombreDisplay) ? $nombreDisplay : trim($plan->Nombre);
                 }
-                // Si $limitesAsignados es null, asume que no hay límites (999).
             }
 
             $yaAnotadasPlan = $inscripcionesCiclo->where('ID_Plan', $planId)->count();
@@ -207,7 +197,6 @@ class InscripcionRepository
             foreach ($gruposPlan as $grupo) {
                 if ($ordenPlan != 999 && $grupo->CursoOrden > $ordenPlan) continue;
                 if ($ordenPlan != 999 && $ordenPlan == $grupo->CursoOrden) {
-                    // Validamos contra el array multidimensional de cursos inscriptos
                     if (!in_array($grupo->Materia_ID_Curso, $cursosInscriptos)) continue;
                 }
 
@@ -220,6 +209,7 @@ class InscripcionRepository
                 $motivos = [];
                 $inscripto = in_array($grupo->ID, $idsGruposInscriptos);
 
+                // Aquí ya no entrará falsamente si el límite de la DB vino en 0, porque ahora vale 999.
                 if ($tieneLimite && $limiteMaxPermitido != 999 && $disponiblesGlobales <= 0 && !$inscripto) {
                     $motivos[] = "Límite de $limiteMaxPermitido materias alcanzado para esta cursada.";
                 }
@@ -301,8 +291,9 @@ class InscripcionRepository
         $limitesAsignados = $plan ? $this->buscarLimitesDelPlan($plan, $limitesExternos) : null;
 
         if ($limitesAsignados) {
-            $tieneLimite = true;
-            $limiteMaxPermitido = $limitesAsignados['max'];
+            // CORRECCIÓN: Replicamos la misma lógica blindada aquí
+            $limiteMaxPermitido = ((int) $limitesAsignados['max'] > 0) ? (int) $limitesAsignados['max'] : 999;
+            $tieneLimite = ($limiteMaxPermitido != 999);
         }
 
         return DB::transaction(function () use ($alumnoId, $idMateriaGrupal, $materiaInfo, $tieneLimite, $limiteMaxPermitido) {
@@ -316,6 +307,7 @@ class InscripcionRepository
 
             $ciclo = DB::table('ciclo_lectivo')->where('ID_Nivel', $alumno->ID_Nivel)->where('Vigente', 'SI')->first();
 
+            // Esto jamás evaluará true falsamente ahora
             if ($tieneLimite && $limiteMaxPermitido != 999) {
                 $cantidadInscriptasPlan = DB::table('grupos as g')
                     ->join('materias_grupales as mg', 'g.ID_Materia_Grupal', '=', 'mg.ID')
