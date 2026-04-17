@@ -7,18 +7,28 @@ use App\Models\ChatConversation;
 use App\Models\ChatMessage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Support\Collection;
 
 class MessageRepository
 {
-    public function getConversations($studentId, $familiaId = null)
+    /**
+     * Helper para resolver el ID de familia desde la base de datos maestra (Multitenant)
+     */
+    public function getFamilyIdFromAsociacion($studentId, $institutionId)
     {
-        $query = ChatConversation::where('ID_Alumno', $studentId);
+        return DB::connection('mysql_gral')
+            ->table('asociaciones')
+            ->where('ID_Alumno', $studentId)
+            ->where('ID_Institucion', $institutionId)
+            ->value('ID_Familia');
+    }
 
-        if ($familiaId) {
-            $query->where('ID_Familia', $familiaId);
-        }
+    public function getConversations($studentId, $familiaId)
+    {
+        $conversaciones = ChatConversation::where('ID_Alumno', $studentId)
+            ->where('ID_Familia', $familiaId)
+            ->get();
 
-        $conversaciones = $query->get();
         $resultado = [];
 
         foreach ($conversaciones as $conv) {
@@ -31,16 +41,12 @@ class MessageRepository
                 continue;
             }
 
-            $querySinLeer = DB::table('chat')
+            $sinLeer = DB::table('chat')
                 ->where('Codigo', $conv->Codigo)
+                ->where('ID_Destinatario', $familiaId)
                 ->where('Tipo_Destinatario', 2)
-                ->where('Leido', 0);
-
-            if ($familiaId) {
-                $querySinLeer->where('ID_Destinatario', $familiaId);
-            }
-
-            $sinLeer = $querySinLeer->count();
+                ->where('Leido', 0)
+                ->count();
 
             $nombreDocente = 'Desconocido';
             $grupo = DB::table('chat_grupos')->where('ID', $conv->ID_Docente)->first();
@@ -55,21 +61,24 @@ class MessageRepository
             }
 
             $resultado[] = [
-                'codigo' => $conv->Codigo,
-                'docente' => $nombreDocente,
-                'ultimo_mensaje' => $ultimoMensaje->Mensaje,
-                'fecha_raw' => $ultimoMensaje->Fecha . ' ' . $ultimoMensaje->Hora,
-                'fecha_um' => date('d/m/Y', strtotime($ultimoMensaje->Fecha)),
-                'hora_um' => $ultimoMensaje->Hora,
-                'sin_leer' => $sinLeer,
-                'id_familia' => $conv->ID_Familia,
-            ];
+            'codigo' => $conv->Codigo,
+            'id_docente' => $conv->ID_Docente, // La que agregamos recién
+            'docente' => $nombreDocente,
+            'ultimo_mensaje' => $ultimoMensaje->Mensaje,
+            'fecha_raw' => $ultimoMensaje->Fecha . ' ' . $ultimoMensaje->Hora, // <-- ¡Me había comido esta línea!
+            'fecha_display' => date('d/m/Y', strtotime($ultimoMensaje->Fecha)),
+            'hora_um' => $ultimoMensaje->Hora,
+            'sin_leer' => $sinLeer,
+            'id_familia' => $conv->ID_Familia,
+        ];
         }
 
+        // Ordenar por fecha y hora descendente (El más nuevo arriba)
         usort($resultado, function ($a, $b) {
-            return strtotime($b['fecha_raw']) - strtotime($a['fecha_raw']);
+            return strcmp($b['fecha_raw'], $a['fecha_raw']);
         });
 
+        // Limpiar data innecesaria para el frontend
         return array_map(function ($item) {
             unset($item['fecha_raw']);
             return $item;
@@ -78,67 +87,102 @@ class MessageRepository
 
     public function getAvailableRecipients($studentId)
     {
-        $alumno = Alumno::findOrFail($studentId);
+        $alumno = DB::table('alumnos')->where('ID', $studentId)->first();
+        if (!$alumno) return [];
+
         $destinatarios = [];
 
-        $grupos = DB::table('chat_grupos')->where('ID_Nivel', $alumno->ID_Nivel)->get();
+        // 1. Grupos Institucionales (Dirección, Equipo, etc.)
+        $grupos = DB::table('chat_grupos')
+            ->where('ID_Nivel', $alumno->ID_Nivel)
+            ->whereIn('Referencia', ['DI', 'PR', 'EQ'])
+            ->get();
 
         foreach ($grupos as $grupo) {
-            $ref = $grupo->Referencia;
+            $destinatarios[] = [
+                'id' => $grupo->ID,
+                'nombre' => $grupo->Nombre,
+                'tipo' => 'GRUPO',
+            ];
+        }
 
-            if (in_array($ref, ['DI', 'PR', 'EQ'])) {
-                $destinatarios[] = ['id' => $grupo->ID, 'nombre' => $grupo->Nombre, 'tipo' => 'grupo'];
+        // 2. Docentes (Materias Normales - Titulares y Adjuntos)
+        $materias = DB::table('materias as m')
+            ->join('personal as p', function ($join) {
+                $join->on('m.ID_Personal', '=', 'p.ID')
+                     ->orOn('m.ID_Adjunto', '=', 'p.ID');
+            })
+            ->where('m.ID_Curso', $alumno->ID_Curso)
+            ->where('m.Mensajeria', 1)
+            ->where('p.Estado', 'H') // H = Habilitado
+            ->select('p.ID', 'p.Apellido', 'p.Nombre', 'm.Materia')
+            ->get();
+
+        foreach ($materias as $mat) {
+            $destinatarios[] = [
+                'id' => $mat->ID,
+                'nombre' => "Prof. {$mat->Apellido}, {$mat->Nombre}",
+                'tipo' => $mat->Materia,
+            ];
+        }
+
+        // 3. Docentes (Materias Grupales)
+        $ciclo = DB::table('ciclo_lectivo')
+            ->where('ID_Nivel', $alumno->ID_Nivel)
+            ->where('Vigente', 'SI')
+            ->first();
+
+        if ($ciclo) {
+            $materiasGrupales = DB::table('materias_grupales as mg')
+                ->join('grupos as g', 'g.ID_Materia_Grupal', '=', 'mg.ID')
+                ->join('personal as p', function ($join) {
+                    $join->on('mg.ID_Personal', '=', 'p.ID')
+                         ->orOn('mg.ID_Adjunto', '=', 'p.ID');
+                })
+                ->where('g.ID_Alumno', $studentId)
+                ->where('mg.ID_Ciclo_Lectivo', $ciclo->ID)
+                ->where('mg.Estado', 0) // 0 = Activa
+                ->where('p.Estado', 'H')
+                ->select('p.ID', 'p.Apellido', 'p.Nombre', 'mg.Materia')
+                ->get();
+
+            foreach ($materiasGrupales as $mg) {
+                $destinatarios[] = [
+                    'id' => $mg->ID,
+                    'nombre' => "Prof. {$mg->Apellido}, {$mg->Nombre}",
+                    'tipo' => $mg->Materia . ' (Grupal)',
+                ];
             }
+        }
 
-            if ($ref == 'PF') {
-                $materias = DB::table('materias')
-                    ->join('personal', function ($join) {
-                        $join->on('materias.ID_Personal', '=', 'personal.ID')
-                            ->orOn('materias.ID_Adjunto', '=', 'personal.ID');
-                    })
-                    ->where('materias.ID_Curso', $alumno->ID_Curso)
-                    ->where('materias.Mensajeria', 1)
-                    ->where('personal.Estado', 'H')
-                    ->select('personal.ID', 'personal.Apellido', 'personal.Nombre', 'materias.Materia')
+        // 4. Preceptores del Curso
+        $cursoInfo = DB::table('cursos')->where('ID', $alumno->ID_Curso)->first();
+        if ($cursoInfo) {
+            $idsPreceptores = array_filter([$cursoInfo->ID_Preceptor, $cursoInfo->ID_Pareja, $cursoInfo->ID_Pareja2]);
+
+            if (!empty($idsPreceptores)) {
+                $preceptores = DB::table('personal')
+                    ->whereIn('ID', $idsPreceptores)
+                    ->where('Estado', 'H')
                     ->get();
 
-                foreach ($materias as $mat) {
+                foreach ($preceptores as $prec) {
                     $destinatarios[] = [
-                        'id' => $mat->ID,
-                        'nombre' => "Prof. {$mat->Apellido}, {$mat->Nombre} ({$mat->Materia})",
-                        'tipo' => 'docente',
+                        'id' => $prec->ID,
+                        'nombre' => "Prof. {$prec->Apellido}, {$prec->Nombre}",
+                        'tipo' => 'PRECEPTOR/A',
                     ];
-                }
-            }
-
-            if (in_array($ref, ['MG', 'MI'])) {
-                $cursoInfo = DB::table('cursos')->where('ID', $alumno->ID_Curso)->first();
-                if ($cursoInfo) {
-                    $idsPreceptores = array_filter([$cursoInfo->ID_Preceptor, $cursoInfo->ID_Pareja, $cursoInfo->ID_Pareja2]);
-
-                    if (!empty($idsPreceptores)) {
-                        $preceptores = DB::table('personal')
-                            ->whereIn('ID', $idsPreceptores)
-                            ->where('Estado', 'H')
-                            ->get();
-
-                        foreach ($preceptores as $prec) {
-                            $destinatarios[] = [
-                                'id' => $prec->ID,
-                                'nombre' => "Prof. {$prec->Apellido}, {$prec->Nombre}",
-                                'tipo' => 'docente',
-                            ];
-                        }
-                    }
                 }
             }
         }
 
+        // Retornamos coleccion filtrando profes duplicados (ej: Si enseña 2 materias al mismo alumno)
         return collect($destinatarios)->unique('id')->values()->all();
     }
 
     public function getChatDetails($codigo, $studentId, $familiaId)
     {
+        // 1. Marcar como leído
         ChatMessage::where('Codigo', $codigo)
             ->where('ID_Destinatario', $familiaId)
             ->where('Tipo_Destinatario', 2)
@@ -149,23 +193,7 @@ class MessageRepository
                 'Hora_Leido' => date('H:i:s'),
             ]);
 
-        $conv = ChatConversation::where('Codigo', $codigo)->first();
-        $nombreProfesor = 'Desconocido';
-        $foto = 'usuario.png';
-
-        if ($conv) {
-            $grupo = DB::table('chat_grupos')->where('ID', $conv->ID_Docente)->first();
-            if ($grupo) {
-                $nombreProfesor = $grupo->Nombre;
-            } else {
-                $profe = DB::table('personal')->where('ID', $conv->ID_Docente)->first();
-                if ($profe) {
-                    $nombreProfesor = "Prof. {$profe->Apellido}, {$profe->Nombre}";
-                    $foto = $profe->PIC ?: 'usuario.png';
-                }
-            }
-        }
-
+        // 2. Extraer historial
         $mensajes = ChatMessage::where('Codigo', $codigo)
             ->orderBy('ID', 'asc')
             ->get()
@@ -178,81 +206,89 @@ class MessageRepository
                     'fecha' => date('d/m/Y', strtotime($msj->Fecha)),
                     'hora' => $msj->Hora,
                     'enviado_por_mi' => $enviadoPorMi,
+                    'leido' => $msj->Leido
                 ];
             });
 
         return [
             'codigo' => $codigo,
-            'profesor' => $nombreProfesor,
-            'foto_profesor' => "https://geoeducacion.com.ar/geo/imagenes/usuarios/{$foto}",
             'mensajes' => $mensajes,
         ];
     }
 
-    public function startConversation($studentId, $familiaId, $data)
+    /**
+     * Unifica inicio de conversación y respuestas aplicando la lógica del legacy
+     */
+    public function sendMessage(array $data)
     {
-        $destinatarioId = $data['destinatario'];
-        $texto = trim($data['mensaje']);
-        $hoy = date('Y-m-d');
-        $ahora = date('H:i:s');
+        return DB::transaction(function () use ($data) {
+            $studentId = $data['id_alumno'];
+            $familiaId = $data['id_familia'];
+            $destinatarioId = $data['id_destinatario'];
+            $texto = trim($data['mensaje']);
+            $codigo = isset($data['codigo']) ? $data['codigo'] : null;
 
-        $conv = ChatConversation::where('ID_Familia', $familiaId)
-            ->where('ID_Alumno', $studentId)
-            ->where('ID_Docente', $destinatarioId)
-            ->first();
+            $alumno = DB::table('alumnos')->where('ID', $studentId)->first();
+            $fecha = date('Y-m-d');
+            $hora = date('H:i:s');
 
-        if (!$conv) {
-            $codigo = Str::random(10);
+            // 1. Manejo del código de conversación
+            if (!$codigo) {
+                $codigo = Str::random(10);
+                ChatConversation::create([
+                    'ID_Docente' => $destinatarioId,
+                    'ID_Familia' => $familiaId,
+                    'ID_Alumno'  => $studentId,
+                    'Codigo'     => $codigo,
+                    'Fecha'      => $fecha,
+                    'Hora'       => $hora
+                ]);
+            } else {
+                // Actualizamos la cabecera
+                DB::table('chat_codigo_conversaciones')
+                    ->where('Codigo', $codigo)
+                    ->update(['Fecha' => $fecha, 'Hora' => $hora]);
+            }
 
-            $conv = ChatConversation::create([
-                'Codigo' => $codigo,
-                'ID_Familia' => $familiaId,
-                'ID_Alumno' => $studentId,
-                'ID_Docente' => $destinatarioId,
-                'Fecha' => $hoy,
-                'Hora' => $ahora,
-            ]);
-        } else {
-            $codigo = $conv->Codigo;
-            $conv->update(['Fecha' => $hoy, 'Hora' => $ahora]);
-        }
+            // 2. Supervisión Mensajería (Columna P)
+            $supervision = DB::table('nivel_parametros')
+                ->where('ID_Nivel', $alumno->ID_Nivel)
+                ->value('Supervision_Mensajeria');
+            $publico = ($supervision == 1) ? 0 : 1;
 
-        $mensaje = ChatMessage::create([
-            'Codigo' => $codigo,
-            'Mensaje' => $texto,
-            'Fecha' => $hoy,
-            'Hora' => $ahora,
-            'ID_Remitente' => $familiaId,
-            'Tipo_Remitente' => 2,
-            'ID_Destinatario' => $destinatarioId,
-            'Tipo_Destinatario' => 1,
-            'Leido' => 0,
-        ]);
+            // 3. Reglas de duplicación para Preceptoría y Niveles 1 y 3
+            $destinatariosIds = [$destinatarioId];
+            $grupo = DB::table('chat_grupos')->where('ID', $destinatarioId)->first();
 
-        return ['codigo' => $codigo, 'mensaje' => $mensaje];
-    }
+            if (($grupo && $grupo->Referencia == 'PR') || in_array($alumno->ID_Nivel, [1, 3])) {
+                $curso = DB::table('cursos')->where('ID', $alumno->ID_Curso)->first();
+                if ($curso) {
+                    $preceptores = array_filter([$curso->ID_Preceptor, $curso->ID_Pareja, $curso->ID_Pareja2]);
+                    $destinatariosIds = array_unique(array_merge($destinatariosIds, $preceptores));
+                }
+            }
 
-    public function replyMessage($codigo, $studentId, $familiaId, $data)
-    {
-        $texto = trim($data['mensaje']);
-        $hoy = date('Y-m-d');
-        $ahora = date('H:i:s');
+            // 4. Inserción segura de los mensajes
+            foreach ($destinatariosIds as $idDest) {
+                if ($idDest <= 0) continue;
 
-        $conv = ChatConversation::where('Codigo', $codigo)->firstOrFail();
-        $conv->update(['Fecha' => $hoy, 'Hora' => $ahora]);
+                ChatMessage::create([
+                    'Fecha'             => $fecha,
+                    'Hora'              => $hora,
+                    'ID_Remitente'      => $familiaId,
+                    'Tipo_Remitente'    => 2, // Familia
+                    'ID_Destinatario'   => $idDest,
+                    'Tipo_Destinatario' => 1, // Personal
+                    'Mensaje'           => $texto,
+                    'Codigo'            => $codigo,
+                    'ID_Alumno'         => $studentId,
+                    'ID_Nivel'          => $alumno->ID_Nivel,
+                    'P'                 => $publico,
+                    'Leido'             => 0
+                ]);
+            }
 
-        $mensaje = ChatMessage::create([
-            'Codigo' => $codigo,
-            'Mensaje' => $texto,
-            'Fecha' => $hoy,
-            'Hora' => $ahora,
-            'ID_Remitente' => $familiaId,
-            'Tipo_Remitente' => 2,
-            'ID_Destinatario' => $conv->ID_Docente,
-            'Tipo_Destinatario' => 1,
-            'Leido' => 0,
-        ]);
-
-        return $mensaje;
+            return $codigo;
+        });
     }
 }
