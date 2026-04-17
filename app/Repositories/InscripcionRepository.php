@@ -4,8 +4,9 @@ namespace App\Repositories;
 
 use App\Models\Alumno;
 use Illuminate\Support\Facades\DB;
-use Exception;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema; // <-- 1. IMPORTANTE: Agregamos el Facade Schema
+use Exception;
 
 class InscripcionRepository
 {
@@ -106,13 +107,18 @@ class InscripcionRepository
         $limitesExternos = $apiData['limites'];
         $apiFallida = $apiData['fallida'];
 
-        // --- INICIO MODIFICACIÓN ---
-        // 1. Obtener TODAS las cursadas en las que está inscripto el alumno actualmente
-        $cursosInscriptos = DB::table('inscripciones')
-            ->where('ID_Alumno', $alumnoId)
-            ->where('Estado', 1) // Asumimos 1 como activo/vigente, ajustá si usan otro flag
-            ->pluck('ID_Curso')
-            ->toArray();
+        // --- INICIO MODIFICACIÓN (GRACEFUL DEGRADATION) ---
+        $cursosInscriptos = [];
+
+        // 2. Comprobamos si la tabla existe antes de consultarla
+        if (Schema::hasTable('inscripciones')) {
+            $cursosInscriptos = DB::table('inscripciones')
+                ->where('ID_Alumno', $alumnoId)
+                ->where('Estado', 1) // Asumimos 1 como activo/vigente
+                ->pluck('ID_Curso')
+                ->toArray();
+        }
+        // Si no existe, $cursosInscriptos queda como un array vacío y el sistema no colapsa.
 
         // Asegurar que el curso principal de la tabla alumnos esté incluido
         if ($alumno->ID_Curso && !in_array($alumno->ID_Curso, $cursosInscriptos)) {
@@ -201,10 +207,8 @@ class InscripcionRepository
             foreach ($gruposPlan as $grupo) {
                 if ($ordenPlan != 999 && $grupo->CursoOrden > $ordenPlan) continue;
                 if ($ordenPlan != 999 && $ordenPlan == $grupo->CursoOrden) {
-                    // --- INICIO MODIFICACIÓN ---
                     // Validamos contra el array multidimensional de cursos inscriptos
                     if (!in_array($grupo->Materia_ID_Curso, $cursosInscriptos)) continue;
-                    // --- FIN MODIFICACIÓN ---
                 }
 
                 $yaAprobada = $notasAlumno->where('ID_Materia', $grupo->Materia_ID)->filter(function($n){ 
