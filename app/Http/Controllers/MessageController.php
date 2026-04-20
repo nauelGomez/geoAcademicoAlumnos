@@ -18,42 +18,49 @@ class MessageController extends Controller
         $this->messageRepo = $messageRepo;
     }
 
-public function index($studentId)
-{
-    // Obtenemos el ID de la institución desde el header o el atributo que setea tu middleware
-    $institutionId = request()->header('X-Institution-ID'); 
-    
-    $familiaId = session('id_usuario') ?: request('id_familia');
+    /**
+     * Mapea con: GET /api/messages/conversations/{studentId}
+     */
+    public function index(Request $request, $studentId): JsonResponse
+    {
+        try {
+            $institutionId = $request->header('X-Institution-ID');
+            $familiaId = session('id_usuario') ?: $request->input('familia_id');
 
-    // Fallback con validación doble: Alumno + Institución
-    if (!$familiaId) {
-        $familiaId = $this->messageRepo->getFamilyIdFromAsociacion($studentId, $institutionId);
+            // Autodescubrimiento de familia para el Frontend (Astro)
+            if (!$familiaId && $studentId && $institutionId) {
+                $familiaId = $this->repo->getFamilyIdFromAsociacion($studentId, $institutionId);
+            }
+
+            if (!$familiaId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se pudo determinar el ID de Familia.',
+                ], 403);
+            }
+
+            $data = $this->repo->getConversations($studentId, $familiaId);
+
+            return response()->json([
+                'success' => true,
+                'data' => $data,
+                'institution_id' => $institutionId,
+            ], 200);
+        } catch (Exception $e) {
+            Log::error('Error fetching conversations: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener conversaciones.',
+                'debug_error' => $e->getMessage(),
+            ], 500);
+        }
     }
-
-    if (!$familiaId) {
-        return response()->json([
-            'success' => false,
-            'message' => "No se encontró asociación para el alumno $studentId en la institución $institutionId."
-        ], 404);
-    }
-
-    $data = $this->messageRepo->getConversations($studentId, $familiaId);
-
-    return response()->json([
-        'success' => true,
-        'data' => $data,
-        'context' => [
-            'id_familia' => $familiaId,
-            'id_institucion' => $institutionId
-        ]
-    ]);
-}
 
     /**
-     * Mapea con: GET /messages/recipients/{studentId}
-     * ESTE ES EL MÉTODO QUE TE FALTABA
+     * Mapea con: GET /api/messages/recipients/{studentId}
      */
-    public function recipients($studentId)
+    public function recipients(Request $request, $studentId): JsonResponse
     {
         try {
             $data = $this->messageRepo->getAvailableRecipients($studentId);
@@ -73,64 +80,92 @@ public function index($studentId)
     }
 
     /**
-     * Mapea con: GET /messages/chat/{codigo}
+     * Mapea con: GET /api/messages/chat/{codigo}
+     * Nota: studentId viene por query string (?studentId=123)
      */
-    public function show($codigo)
+    public function show(Request $request, $codigo): JsonResponse
     {
-        $studentId = request('studentId'); // O pasarlo por parámetro si ajustás la ruta
-        $familiaId = session('id_usuario');
-        
-        $data = $this->messageRepo->getChatDetails($codigo, $studentId, $familiaId);
+        try {
+            $studentId = $request->input('studentId');
+            $institutionId = $request->header('X-Institution-ID');
+            $familiaId = session('id_usuario') ?: $request->input('familia_id');
 
-        return response()->json([
-            'success' => true,
-            'data' => $data,
-            'message' => 'Detalle del chat recuperado.'
-        ]);
+            // Autodescubrimiento de familia
+            if (!$familiaId && $studentId && $institutionId) {
+                $familiaId = $this->repo->getFamilyIdFromAsociacion($studentId, $institutionId);
+            }
+
+            if (!$familiaId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se pudo determinar el ID de Familia para leer este chat.',
+                ], 403);
+            }
+
+            $data = $this->repo->getChatDetails($codigo, $studentId, $familiaId);
+
+            return response()->json([
+                'success' => true,
+                'data' => $data,
+                'institution_id' => $institutionId,
+            ], 200);
+        } catch (Exception $e) {
+            Log::error('Error fetching chat details: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al obtener el chat.',
+                'debug_error' => $e->getMessage(),
+            ], 500);
+        }
     }
 
-   public function store(Request $request)
-{
-    $data = $request->all();
-    $studentId = $request->input('id_alumno');
-    $institutionId = $request->header('X-Institution-ID');
+    /**
+     * Mapea con: POST /api/messages/send
+     */
+    public function store(Request $request): JsonResponse
+    {
+        try {
+            $studentId = $request->input('id_alumno');
+            $institutionId = $request->header('X-Institution-ID');
+            $familiaId = session('id_usuario') ?: $request->input('familia_id');
 
-    // 1. Intentamos obtener la familia (Sesión -> Request -> Fallback associations)
-    $familiaId = session('id_usuario') ?: $request->input('id_familia');
+            if (!$familiaId && $studentId && $institutionId) {
+                $familiaId = $this->repo->getFamilyIdFromAsociacion($studentId, $institutionId);
+            }
 
-    if (!$familiaId && $studentId && $institutionId) {
-        // Usamos el método que ya creamos en el repo para buscar en la DB general
-        $familiaId = $this->messageRepo->getFamilyIdFromAsociacion($studentId, $institutionId);
+            if (!$familiaId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No se pudo determinar el ID de Familia para el envío.',
+                ], 422);
+            }
+
+            $request->validate([
+                'id_destinatario' => 'required',
+                'mensaje' => 'required|string|max:5000',
+            ]);
+
+            // Inyectamos el familiaId resuelto en los datos que van al repo
+            $payload = $request->all();
+            $payload['id_familia'] = $familiaId;
+
+            $data = $this->repo->sendMessage($payload);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Mensaje enviado correctamente.',
+                'data' => ['codigo' => $data],
+                'institution_id' => $institutionId,
+            ], 201);
+        } catch (Exception $e) {
+            Log::error('Error storing message: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al enviar mensaje.',
+                'debug_error' => $e->getMessage(),
+            ], 500);
+        }
     }
-
-    // 2. Si sigue vacío, devolvemos error antes de que explote la SQL
-    if (!$familiaId) {
-        return response()->json([
-            'success' => false, 
-            'message' => 'Error: No se pudo determinar el ID de Familia para el envío.'
-        ], 422);
-    }
-
-    // 3. Inyectamos el ID detectado en el array de datos
-    $data['id_familia'] = $familiaId;
-
-    try {
-        $result = $this->messageRepo->sendMessage($data);
-
-        return response()->json([
-            'success' => true,
-            'data' => [
-                'codigo' => $result,
-                'id_familia_usado' => $familiaId
-            ],
-            'message' => 'Mensaje enviado con éxito.'
-        ]);
-    } catch (\Exception $e) {
-        return response()->json([
-            'success' => false,
-            'message' => 'Error al procesar el envío en el repositorio.',
-            'errors' => [$e->getMessage()]
-        ], 500);
-    }
-}
 }

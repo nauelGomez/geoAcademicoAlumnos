@@ -208,13 +208,20 @@ Route::middleware(['tenant'])->group(function () {
         Route::put('/student/{studentId}', ide_route([ProfileController::class, 'update']));
     });
 
-    // Route::prefix('messages')->group(function () {
-    //     Route::get('/student/{studentId}/recipients', ide_route([MessageController::class, 'create']));
-    //     Route::get('/student/{studentId}/chat/{codigo}', ide_route([MessageController::class, 'show']));
-    //     Route::post('/student/{studentId}', ide_route([MessageController::class, 'store']));
-    //     Route::post('/student/{studentId}/chat/{codigo}', ide_route([MessageController::class, 'reply']));
-    // });
-
+// --- Mensajería / Messaging (Unificado) ---
+    Route::prefix('messages')->group(function () {
+        // 1. Listado de conversaciones por alumno
+        Route::get('/conversations/{studentId}', ide_route([MessageController::class, 'index']));
+        
+        // 2. Obtener destinatarios habilitados
+        Route::get('/recipients/{studentId}', ide_route([MessageController::class, 'recipients']));
+        
+        // 3. Ver detalle de un chat 
+        Route::get('/chat/{codigo}', ide_route([MessageController::class, 'show']));
+        
+        // 4. Iniciar conversación o responder
+        Route::post('/send', ide_route([MessageController::class, 'store']));
+    });
     /*
     |--------------------------------------------------------------------------
     | App Familias Routes
