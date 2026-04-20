@@ -43,6 +43,7 @@ use App\Http\Controllers\CertificateController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\MessageController;
+use App\Http\Controllers\AuthController; // <-- Controlador de Autenticación agregado
 
 // Controladores de AppFamilias
 use App\Http\Controllers\AppFamilias\FamilyStudentController;
@@ -89,7 +90,10 @@ Route::prefix('institutions')->group(function () {
 |--------------------------------------------------------------------------
 */
 Route::middleware(['tenant'])->group(function () {
-
+    // --- Autenticación / Auth ---
+    Route::prefix('auth')->group(function () {
+        Route::post('/family-login', ide_route([AuthController::class, 'login']));
+    });
     // --- Mensajería / Messaging ---
     Route::prefix('messages')->group(function () {
         // Listado de conversaciones por alumno
