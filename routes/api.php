@@ -197,13 +197,13 @@ Route::middleware(['tenant'])->group(function () {
     Route::prefix('messages')->group(function () {
         // 1. Listado de conversaciones por alumno
         Route::get('/conversations/{studentId}', ide_route([MessageController::class, 'index']));
-        
+
         // 2. Obtener destinatarios habilitados
         Route::get('/recipients/{studentId}', ide_route([MessageController::class, 'recipients']));
-        
-        // 3. Ver detalle de un chat 
+
+        // 3. Ver detalle de un chat
         Route::get('/chat/{codigo}', ide_route([MessageController::class, 'show']));
-        
+
         // 4. Iniciar conversación o responder
         Route::post('/send', ide_route([MessageController::class, 'store']));
     });
@@ -256,6 +256,7 @@ Route::middleware(['tenant'])->group(function () {
         Route::get('/students/{studentId}/aulas/{materiaId}/tipo/{tipoMateria}', ide_route([FamilyAulaController::class, 'show']));
         Route::get('/students/{studentId}/aulas/{materiaId}/tipo/{tipoMateria}/tareas', ide_route([FamilyAulaController::class, 'tareas']));
         Route::get('/students/{studentId}/aulas/{materiaId}/tipo/{tipoMateria}/recursos', ide_route([FamilyAulaController::class, 'recursos']));
+        Route::get('/students/{studentId}/aulas/{materiaId}/tipo/{tipoMateria}/clases', ide_route([FamilyAulaController::class, 'clases']));
 
         // TAREAS VIRTUALES
         Route::prefix('v1/families')->group(function () {

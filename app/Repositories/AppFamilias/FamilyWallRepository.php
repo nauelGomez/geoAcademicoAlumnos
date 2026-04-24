@@ -22,7 +22,7 @@ class FamilyWallRepository
             ->where('ID_Nivel', $alumno->ID_Nivel)
             ->where('Vigente', 'SI')
             ->first();
-        
+
         $cicloId = $ciclo ? $ciclo->ID : 0;
         $ficl = $ciclo ? $ciclo->IPT : '2000-01-01';
 
@@ -99,7 +99,7 @@ class FamilyWallRepository
     public function getWallDetails($wallId, $studentId)
     {
         $muro = Muro::with(['docente', 'detalles'])->where('B', 0)->findOrFail($wallId);
-        
+
         // Marcar como leídos los mensajes del docente que el alumno no haya visto
         $this->markWallAsRead($wallId, $studentId);
 
@@ -144,7 +144,7 @@ class FamilyWallRepository
     private function markWallAsRead($wallId, $studentId)
     {
         $now = Carbon::now();
-        
+
         // Obtener IDs de mensajes del docente no leídos por el alumno
         $unreadIds = DB::table('tareas_materia_muro_detalle as d')
             ->leftJoin('tareas_materia_muro_lecturas as l', function($join) use ($studentId) {

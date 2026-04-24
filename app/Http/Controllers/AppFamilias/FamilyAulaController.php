@@ -213,6 +213,31 @@ class FamilyAulaController extends BaseInstitutionController
         }
     }
 
+    public function clases(Request $request, $studentId, $materiaId, $tipoMateria)
+    {
+        try {
+            $cicloLectivo = $request->query('ciclo', date('Y'));
+
+            $data = $this->repo->getClases(
+                (int) $studentId,
+                (int) $materiaId,
+                (string) $tipoMateria,
+                $cicloLectivo
+            );
+
+            return response()->json([
+                'success' => true,
+                'data' => $data
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error al cargar el listado de clases',
+                'debug' => $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function detalleTarea(Request $request, $studentId, $materiaId, $tipoMateria, $taskId): JsonResponse
     {
         try {

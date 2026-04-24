@@ -1060,7 +1060,6 @@ class FamilyAulaRepository
             }
 
             return $hoy >= $fechaPub;
-
         })->map(function ($recurso) {
             $archivo = (string) ($recurso->Archivo ?? '');
             $extension = strtolower(pathinfo($archivo, PATHINFO_EXTENSION));
@@ -1097,10 +1096,195 @@ class FamilyAulaRepository
                 'leido' => $leido,
             ];
         })
-        ->values()
-        ->all();
+            ->values()
+            ->all();
 
         return $recursos;
+    }
+
+    public function getClases($studentId, $materiaId, $tipoMateria, $cicloLectivo = null)
+    {
+        $alumno = Alumno::find($studentId);
+        if (!$alumno) {
+            return null;
+        }
+
+        $tipoMateria = strtolower(trim((string) $tipoMateria));
+        if (!in_array($tipoMateria, ['c', 'g'], true)) {
+            return null;
+        }
+
+        $hoy = Carbon::now()->format('Y-m-d');
+
+        $cicloQuery = DB::table('ciclo_lectivo')
+            ->where('ID_Nivel', $alumno->ID_Nivel);
+
+        if (!empty($cicloLectivo)) {
+            $ciclo = (clone $cicloQuery)
+                ->where('Ciclo_lectivo', (int) $cicloLectivo)
+                ->first();
+        } else {
+            $ciclo = null;
+        }
+
+        if (!$ciclo) {
+            $ciclo = (clone $cicloQuery)
+                ->where('Vigente', 'SI')
+                ->orderByDesc('ID')
+                ->first();
+        }
+
+        if (!$ciclo) {
+            $ciclo = (clone $cicloQuery)
+                ->orderByDesc('ID')
+                ->first();
+        }
+
+        if (!$ciclo) {
+            return null;
+        }
+
+        $cicloId = (int) $ciclo->ID;
+
+        if ($tipoMateria === 'c') {
+            $materiaRow = DB::table('materias as m')
+                ->leftJoin('cursos as c', 'm.ID_Curso', '=', 'c.ID')
+                ->leftJoin('personal as p', 'm.ID_Personal', '=', 'p.ID')
+                ->where('m.ID', $materiaId)
+                ->select(
+                    'm.ID',
+                    'm.Materia',
+                    'm.ID_Curso',
+                    'c.Cursos',
+                    'p.Apellido',
+                    'p.Nombre'
+                )
+                ->first();
+
+            if (!$materiaRow) {
+                return null;
+            }
+
+            $materiaLabel = trim((string) $materiaRow->Materia);
+            if (!empty($materiaRow->Cursos)) {
+                $materiaLabel .= ' (' . trim((string) $materiaRow->Cursos) . ')';
+            }
+        } else {
+            $materiaRow = DB::table('materias_grupales as mg')
+                ->leftJoin('personal as p', 'mg.ID_Personal', '=', 'p.ID')
+                ->where('mg.ID', $materiaId)
+                ->select(
+                    'mg.ID',
+                    'mg.Materia',
+                    'mg.ID_Ciclo_Lectivo',
+                    'p.Apellido',
+                    'p.Nombre'
+                )
+                ->first();
+
+            if (!$materiaRow) {
+                return null;
+            }
+
+            $materiaLabel = trim((string) $materiaRow->Materia);
+        }
+
+        $clases = DB::table('clases_virtuales as cv')
+            ->join('clases_virtuales_envios as cve', function ($join) use ($studentId) {
+                $join->on('cve.ID_Clase', '=', 'cv.ID')
+                    ->where('cve.ID_Destinatario', '=', $studentId)
+                    ->where('cve.Envio', '=', 1);
+            })
+            ->where('cv.ID_Materia', $materiaId)
+            ->where('cv.Tipo_Materia', $tipoMateria)
+            ->where('cv.ID_Ciclo_Lectivo', $cicloId)
+            ->where('cv.Estado', 1)
+            ->where(function ($q) use ($hoy) {
+                $q->whereNull('cv.Fecha_Publicacion')
+                    ->orWhere('cv.Fecha_Publicacion', '0000-00-00')
+                    ->orWhere('cv.Fecha_Publicacion', '<=', $hoy);
+            })
+            ->orderBy('cv.Orden', 'desc')
+            ->select(
+                'cv.ID',
+                'cv.Orden',
+                'cv.Titulo',
+                'cv.Guia_Ap',
+                'cv.Fecha',
+                'cv.Fecha_Publicacion',
+                'cv.Estado',
+                'cve.Leido as Leido_Clase'
+            )
+            ->get()
+            ->map(function ($clase) use ($studentId) {
+                $cantRecursos = DB::table('clases_virtuales_contenidos as cvc')
+                    ->where('cvc.ID_Clase', $clase->ID)
+                    ->where('cvc.Visible', 1)
+                    ->where('cvc.Estado', '<=', 1)
+                    ->count();
+
+                $cantTareas = DB::table('clases_virtuales_actividades as cva')
+                    ->join('tareas_virtuales as tv', 'cva.ID_Tarea', '=', 'tv.ID')
+                    ->join('tareas_envios as te', function ($join) use ($studentId) {
+                        $join->on('te.ID_Tarea', '=', 'tv.ID')
+                            ->where('te.ID_Destinatario', '=', $studentId)
+                            ->where('te.Envio', '=', 1);
+                    })
+                    ->where('cva.ID_Clase', $clase->ID)
+                    ->where('cva.Visible', 1)
+                    ->where('tv.Cerrada', 0)
+                    ->where('tv.Envio', 1)
+                    ->where('tv.Tipo', 1)
+                    ->distinct('tv.ID')
+                    ->count('tv.ID');
+
+                $cantForos = DB::table('clases_virtuales_actividades as cva')
+                    ->join('tareas_virtuales as tv', 'cva.ID_Tarea', '=', 'tv.ID')
+                    ->join('tareas_envios as te', function ($join) use ($studentId) {
+                        $join->on('te.ID_Tarea', '=', 'tv.ID')
+                            ->where('te.ID_Destinatario', '=', $studentId)
+                            ->where('te.Envio', '=', 1);
+                    })
+                    ->where('cva.ID_Clase', $clase->ID)
+                    ->where('cva.Visible', 1)
+                    ->where('tv.Cerrada', 0)
+                    ->where('tv.Envio', 1)
+                    ->where('tv.Tipo', 2)
+                    ->distinct('tv.ID')
+                    ->count('tv.ID');
+
+                return [
+                    'clase_id' => (int) $clase->ID,
+                    'orden' => (int) $clase->Orden,
+                    'titulo' => (string) $clase->Titulo,
+                    'guia_aprendizaje' => (string) $clase->Guia_Ap,
+                    'fecha' => !empty($clase->Fecha)
+                        ? Carbon::parse($clase->Fecha)->format('Y-m-d')
+                        : null,
+                    'fecha_publicacion' => (!empty($clase->Fecha_Publicacion) && $clase->Fecha_Publicacion !== '0000-00-00')
+                        ? Carbon::parse($clase->Fecha_Publicacion)->format('Y-m-d')
+                        : null,
+                    'leida' => (bool) ($clase->Leido_Clase ?? 0),
+                    'cantidades' => [
+                        'recursos' => (int) $cantRecursos,
+                        'tareas' => (int) $cantTareas,
+                        'foros' => (int) $cantForos,
+                    ],
+                ];
+            })
+            ->values()
+            ->all();
+
+        return [
+            'datos_generales' => [
+                'materia' => $materiaLabel,
+                'tipo_materia' => strtoupper($tipoMateria),
+                'id_materia' => (int) $materiaId,
+                'ciclo_lectivo' => $cicloId,
+                'nombre_ciclo_lectivo' => (string) ($ciclo->Ciclo_lectivo ?? ''),
+            ],
+            'clases' => $clases,
+        ];
     }
 
     public function getDetalleTarea($studentId, $materiaId, $tipoMateria, $taskId, $cicloLectivo = null)
