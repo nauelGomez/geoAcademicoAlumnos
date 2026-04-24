@@ -1010,9 +1010,15 @@ class FamilyAulaRepository
             return null;
         }
 
+        $cicloId = (int) $ciclo->ID;
         $fechaInicioCiclo = !empty($ciclo->IPT) ? $ciclo->IPT : '2000-01-01';
 
-        $recursos = DB::table('clases_virtuales_contenidos as cvc')
+        // 1. Obtenemos el ID de la agrupación (burbuja) del alumno
+        $idAgrupacion = $this->resolveAgrupacionAlumno($alumno, $cicloId);
+
+        // 2. Traemos todos los recursos base de la materia dentro del ciclo
+        // Quitamos los wheres estrictos de Fecha_Vencimiento del query builder para manejarlos en el filter
+        $recursosBase = DB::table('clases_virtuales_contenidos as cvc')
             ->join('clases_virtuales_contenidos_tipos as cvct', 'cvc.ID_Tipo', '=', 'cvct.ID')
             ->leftJoin('clases_virtuales_contenidos_lecturas as l', function ($join) use ($studentId) {
                 $join->on('cvc.ID', '=', 'l.ID_Contenido')
@@ -1024,12 +1030,6 @@ class FamilyAulaRepository
             ->where('cvc.Visible', 1)
             ->where('cvc.Estado', '<=', 1)
             ->where('cvc.Fecha', '>=', $fechaInicioCiclo)
-            ->where('cvc.Fecha', '<=', $hoy)
-            ->where(function ($q) use ($hoy) {
-                $q->whereNull('cvc.Fecha_Vencimiento')
-                    ->orWhere('cvc.Fecha_Vencimiento', '0000-00-00')
-                    ->orWhere('cvc.Fecha_Vencimiento', '>=', $hoy);
-            })
             ->orderBy('cvc.Fecha', 'desc')
             ->select(
                 'cvc.*',
@@ -1037,45 +1037,68 @@ class FamilyAulaRepository
                 'cvct.Enlace as TipoEsEnlace',
                 'l.ID as ID_Lectura'
             )
-            ->get()
-            ->map(function ($recurso) {
-                $archivo = (string) ($recurso->Archivo ?? '');
-                $extension = strtolower(pathinfo($archivo, PATHINFO_EXTENSION));
-                $leido = !empty($recurso->ID_Lectura);
+            ->get();
 
-                $tipoRecurso = 'archivo';
-                if ((int) ($recurso->TipoEsEnlace ?? 0) === 1 || !empty($recurso->Enlace)) {
-                    $tipoRecurso = 'enlace';
-                } elseif (in_array($extension, ['pdf'], true)) {
-                    $tipoRecurso = 'pdf';
-                } elseif (in_array($extension, ['mp4', 'avi', 'mov', 'wmv', 'webm'], true)) {
-                    $tipoRecurso = 'video';
-                }
+        // 3. Filtramos y mapeamos aplicando la lógica legacy exacta
+        $recursos = $recursosBase->filter(function ($recurso) use ($idAgrupacion, $hoy) {
+            // En el legacy PHP, curiosamente, "Fecha_Vencimiento" actúa como la FECHA DE PUBLICACIÓN del recurso.
+            if ($idAgrupacion > 0) {
+                $override = DB::table('tareas_virtuales_vencimientos')
+                    ->where('ID_Tarea', $recurso->ID)
+                    ->where('Tipo', '>', 2) // Tipo > 2 en el sistema legacy se usa para Contenidos/Recursos
+                    ->where('ID_Agrupacion', $idAgrupacion)
+                    ->first();
 
-                return [
-                    'id_recurso' => (int) $recurso->ID,
-                    'id_clase' => (int) $recurso->ID_Clase,
-                    'id_tipo_recurso' => (int) $recurso->ID_Tipo,
-                    'tipo_recurso' => (string) ($recurso->NombreTipo ?? $tipoRecurso),
-                    'tipo_recurso_codigo' => $tipoRecurso,
-                    'titulo' => (string) $recurso->Titulo,
-                    'descripcion' => (string) $recurso->Descripcion,
-                    'enlace' => (string) $recurso->Enlace,
-                    'archivo' => $archivo,
-                    'servidor' => (int) ($recurso->Servidor ?? 0),
-                    'fecha_publicacion' => !empty($recurso->Fecha) ? Carbon::parse($recurso->Fecha)->format('Y-m-d') : null,
-                    'fecha_vencimiento' => (!empty($recurso->Fecha_Vencimiento) && $recurso->Fecha_Vencimiento != '0000-00-00')
-                        ? Carbon::parse($recurso->Fecha_Vencimiento)->format('Y-m-d')
-                        : null,
-                    'url_codigo' => (string) ($recurso->Code ?? ''),
-                    'visible' => (int) ($recurso->Visible ?? 0),
-                    'estado' => (int) ($recurso->Estado ?? 0),
-                    'progreso' => $leido ? 100 : 0,
-                    'leido' => $leido,
-                ];
-            })
-            ->values()
-            ->all();
+                $fechaPub = $override ? $override->Fecha_Vencimiento : $recurso->Fecha_Vencimiento;
+            } else {
+                $fechaPub = $recurso->Fecha_Vencimiento;
+            }
+
+            // Validar si ya es fecha de mostrarlo. Si está vacío o es '0000-00-00', asumimos que es visible siempre.
+            if (empty($fechaPub) || $fechaPub === '0000-00-00') {
+                return true;
+            }
+
+            return $hoy >= $fechaPub;
+
+        })->map(function ($recurso) {
+            $archivo = (string) ($recurso->Archivo ?? '');
+            $extension = strtolower(pathinfo($archivo, PATHINFO_EXTENSION));
+            $leido = !empty($recurso->ID_Lectura);
+
+            $tipoRecurso = 'archivo';
+            if ((int) ($recurso->TipoEsEnlace ?? 0) === 1 || !empty($recurso->Enlace)) {
+                $tipoRecurso = 'enlace';
+            } elseif (in_array($extension, ['pdf'], true)) {
+                $tipoRecurso = 'pdf';
+            } elseif (in_array($extension, ['mp4', 'avi', 'mov', 'wmv', 'webm'], true)) {
+                $tipoRecurso = 'video';
+            }
+
+            return [
+                'id_recurso' => (int) $recurso->ID,
+                'id_clase' => (int) $recurso->ID_Clase,
+                'id_tipo_recurso' => (int) $recurso->ID_Tipo,
+                'tipo_recurso' => (string) ($recurso->NombreTipo ?? $tipoRecurso),
+                'tipo_recurso_codigo' => $tipoRecurso,
+                'titulo' => (string) $recurso->Titulo,
+                'descripcion' => (string) $recurso->Descripcion,
+                'enlace' => (string) $recurso->Enlace,
+                'archivo' => $archivo,
+                'servidor' => (int) ($recurso->Servidor ?? 0),
+                'fecha_publicacion' => !empty($recurso->Fecha) ? Carbon::parse($recurso->Fecha)->format('Y-m-d') : null,
+                'fecha_vencimiento' => (!empty($recurso->Fecha_Vencimiento) && $recurso->Fecha_Vencimiento != '0000-00-00')
+                    ? Carbon::parse($recurso->Fecha_Vencimiento)->format('Y-m-d')
+                    : null,
+                'url_codigo' => (string) ($recurso->Code ?? ''),
+                'visible' => (int) ($recurso->Visible ?? 0),
+                'estado' => (int) ($recurso->Estado ?? 0),
+                'progreso' => $leido ? 100 : 0,
+                'leido' => $leido,
+            ];
+        })
+        ->values()
+        ->all();
 
         return $recursos;
     }
