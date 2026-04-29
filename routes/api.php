@@ -26,6 +26,7 @@ if (!function_exists('ide_route')) {
 */
 
 // Controladores Principales
+use App\Http\Controllers\AuthController;
 use App\Http\Controllers\InstitutionController;
 use App\Http\Controllers\AlumnoController;
 use App\Http\Controllers\TaskController;
@@ -77,6 +78,9 @@ Route::get('/hello', function () {
     ]);
 });
 
+// SSO: canje de código de un solo uso (no necesita DB, lee de caché)
+Route::get('/auth/sso/{code}', ide_route([AuthController::class, 'sso']));
+
 // Estas rutas consultan la DB Master para listar los colegios
 Route::prefix('institutions')->group(function () {
     Route::get('/', ide_route([InstitutionController::class, 'index']));
@@ -89,6 +93,9 @@ Route::prefix('institutions')->group(function () {
 |--------------------------------------------------------------------------
 */
 Route::middleware(['tenant'])->group(function () {
+
+    // --- Auth ---
+    Route::post('/auth/login', ide_route([AuthController::class, 'login']));
 
     // --- Alumnos ---
     Route::prefix('alumnos')->group(function () {
